@@ -56,6 +56,13 @@ def train():
     print("Converting to TFLite...")
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     
+    # Enable SELECT_TF_OPS to support LSTM layers
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,  # Enable TensorFlow Lite ops
+        tf.lite.OpsSet.SELECT_TF_OPS     # Enable TensorFlow ops (needed for LSTM)
+    ]
+    converter._experimental_lower_tensor_list_ops = False
+    
     # Optimization/Quantization (Optional but recommended for mobile)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     
