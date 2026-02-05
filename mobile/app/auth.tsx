@@ -69,6 +69,21 @@ export default function AuthScreen() {
                             {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
                         </Text>
                     </TouchableOpacity>
+
+                    {/* TEST ONLY: Quick Login Button */}
+                    <View style={styles.divider}>
+                        <View style={styles.dividerLine} />
+                        <Text style={styles.dividerText}>Testing Mode</Text>
+                        <View style={styles.dividerLine} />
+                    </View>
+
+                    <TouchableOpacity
+                        style={styles.quickLoginButton}
+                        onPress={() => router.replace('/home')}
+                    >
+                        <Text style={styles.quickLoginText}>🚀 Quick Login (Bypass Auth)</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.quickLoginNote}>Skip authentication for testing</Text>
                 </View>
             </View>
         </ScrollView>
@@ -145,5 +160,39 @@ const styles = StyleSheet.create({
     switchText: {
         color: '#3b82f6',
         fontSize: 14,
+    },
+    divider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: 24,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: '#475569',
+    },
+    dividerText: {
+        color: '#64748b',
+        fontSize: 12,
+        paddingHorizontal: 12,
+    },
+    quickLoginButton: {
+        backgroundColor: '#475569',
+        borderRadius: 8,
+        padding: 14,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#64748b',
+    },
+    quickLoginText: {
+        color: '#e2e8f0',
+        fontSize: 15,
+        fontWeight: '500',
+    },
+    quickLoginNote: {
+        color: '#64748b',
+        fontSize: 12,
+        textAlign: 'center',
+        marginTop: 8,
     },
 })
