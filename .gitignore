@@ -1,33 +1,53 @@
-# OS
-.DS_Store
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Supabase
+.supabase/
 
 # Node
 node_modules/
-npm-debug.log
-yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
 venv/
 env/
-.env
+ENV/
 
-# Mobile (Expo)
-.expo/
-mobile/node_modules/
-mobile/.expo/
-mobile/dist/
-mobile/web-build/
+# ML Models (large files)
+*.h5
+*.tflite
+*.pb
 
-# ML Pipeline
-ml-pipeline/raw_data/
-ml-pipeline/processed_data/
-ml-pipeline/models/checkpoints/
-# Keep final models? Maybe too large for git?
-# ml-pipeline/models/final/
+# Data
+raw_downloads/
+raw_data/*.csv
+processed_data/
 
-# Editor
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Logs
+*.log
+logs/
