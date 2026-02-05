@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native'
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from 'react-native'
 import { useState } from 'react'
 import { supabase } from '../src/services/supabase.service'
 import { router } from 'expo-router'
@@ -36,21 +36,24 @@ export default function AuthScreen() {
 
                 <View style={styles.form}>
                     <Text style={styles.label}>Email</Text>
-                    <input
+                    <TextInput
                         style={styles.input}
                         placeholder="you@example.com"
+                        placeholderTextColor="#64748b"
                         value={email}
-                        onChange={(e: any) => setEmail(e.target.value)}
+                        onChangeText={setEmail}
                         autoCapitalize="none"
+                        keyboardType="email-address"
                     />
 
                     <Text style={styles.label}>Password</Text>
-                    <input
+                    <TextInput
                         style={styles.input}
                         placeholder="••••••••"
+                        placeholderTextColor="#64748b"
                         value={password}
-                        onChange={(e: any) => setPassword(e.target.value)}
-                        type="password"
+                        onChangeText={setPassword}
+                        secureTextEntry
                     />
 
                     <TouchableOpacity
