@@ -7,7 +7,7 @@ export default function Login() {
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
-    const { signIn, isAdmin } = useAuth()
+    const { signIn, bypassAuth } = useAuth()
     const navigate = useNavigate()
 
     async function handleSubmit(e: React.FormEvent) {
@@ -81,24 +81,19 @@ export default function Login() {
                 </form>
 
                 <div className="mt-6 pt-6 border-t border-slate-700">
-                    <p className="text-center text-slate-400 text-xs mb-3">
-                        Quick Test Login (Remove in production)
-                    </p>
                     <button
                         onClick={() => {
-                            setEmail('admin@roadsense.com')
-                            setPassword('admin123')
-                            // Auto-submit after a short delay
-                            setTimeout(() => {
-                                const form = document.querySelector('form')
-                                if (form) form.requestSubmit()
-                            }, 100)
+                            bypassAuth()
+                            navigate('/dashboard')
                         }}
                         type="button"
                         className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
                     >
-                        🚀 Quick Login (Test)
+                        🚀 Quick Login (Bypass Auth)
                     </button>
+                    <p className="text-center text-slate-500 text-xs mt-2">
+                        Testing mode: skips Supabase
+                    </p>
                 </div>
 
                 <p className="text-center text-slate-400 text-sm mt-6">

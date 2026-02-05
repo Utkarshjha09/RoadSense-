@@ -8,6 +8,7 @@ interface AuthContextType {
     loading: boolean
     signIn: (email: string, password: string) => Promise<void>
     signOut: () => Promise<void>
+    bypassAuth: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -68,12 +69,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     async function signOut() {
+        setUser(null)
+        setIsAdmin(false)
         const { error } = await supabase.auth.signOut()
         if (error) throw error
     }
 
+    // TEST ONLY: Bypass authentication
+    function bypassAuth() {
+        setUser({
+            id: 'test-admin-id',
+            email: 'admin@roadsense.com',
+            aud: 'authenticated',
+            role: 'authenticated',
+            app_metadata: {},
+            user_metadata: {},
+            created_at: new Date().toISOString()
+        } as User)
+        setIsAdmin(true)
+        setLoading(false)
+    }
+
     return (
-        <AuthContext.Provider value={{ user, isAdmin, loading, signIn, signOut }}>
+        <AuthContext.Provider value={{ user, isAdmin, loading, signIn, signOut, bypassAuth }}>
             {children}
         </AuthContext.Provider>
     )
