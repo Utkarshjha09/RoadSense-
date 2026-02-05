@@ -80,6 +80,27 @@ export default function Login() {
                     </button>
                 </form>
 
+                <div className="mt-6 pt-6 border-t border-slate-700">
+                    <p className="text-center text-slate-400 text-xs mb-3">
+                        Quick Test Login (Remove in production)
+                    </p>
+                    <button
+                        onClick={() => {
+                            setEmail('admin@roadsense.com')
+                            setPassword('admin123')
+                            // Auto-submit after a short delay
+                            setTimeout(() => {
+                                const form = document.querySelector('form')
+                                if (form) form.requestSubmit()
+                            }, 100)
+                        }}
+                        type="button"
+                        className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+                    >
+                        🚀 Quick Login (Test)
+                    </button>
+                </div>
+
                 <p className="text-center text-slate-400 text-sm mt-6">
                     Admin access only
                 </p>
