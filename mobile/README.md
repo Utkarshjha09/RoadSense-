@@ -1,50 +1,154 @@
-# Welcome to your Expo app 👋
+# RoadSense Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+React Native (Expo) mobile application for real-time pothole detection using smartphone sensors.
 
-## Get started
+## Features
 
-1. Install dependencies
+- ✅ **Authentication** - Supabase email/password auth
+- ✅ **Sensor Collection** - 50Hz accelerometer + gyroscope
+- ✅ **Gravity Filtering** - Low-pass filter to isolate user acceleration
+- ✅ **Real-time Detection** - GPS speed monitoring with auto-pause
+- ✅ **Data Logging** - CSV export for training data collection
+- ✅ **Backend Integration** - Automatic upload to Supabase
+- 🚧 **TFLite Inference** - Coming soon (requires model without LSTM)
 
-   ```bash
-   npm install
-   ```
+## Setup
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+### 1. Install Dependencies
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Configure Environment
+```bash
+cp .env.example .env
+# Edit .env and add your Supabase credentials
+```
 
-## Learn more
+### 3. Run App
+```bash
+# Development build (recommended)
+npx expo run:android
+# or
+npx expo run:ios
 
-To learn more about developing your project with Expo, look at the following resources:
+# Expo Go (limited sensor access)
+npx expo start
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Project Structure
 
-## Join the community
+```
+mobile/
+├── app/
+│   ├── index.tsx           # Entry point with auth check
+│   ├── auth.tsx            # Sign in/up screen
+│   ├── home.tsx            # Main menu
+│   ├── driving.tsx         # Real-time detection
+│   └── logger.tsx          # Data collection
+├── src/
+│   ├── hooks/
+│   │   └── useRoadSensors.ts    # Sensor hook (50Hz, gravity filter)
+│   └── services/
+│       └── supabase.service.ts  # Backend API client
+└── assets/
+    └── models/
+        └── road_sense_model.tflite  # AI model (to be added)
+```
 
-Join our community of developers creating universal apps.
+## Screens
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### 1. Authentication (`/auth`)
+- Email/password sign in
+- New user registration
+- Auto-redirect to home on success
+
+### 2. Home (`/home`)
+- Main navigation menu
+- Quick access to driving mode and data logger
+- User profile with sign out
+
+### 3. Driving Mode (`/driving`)
+- Real-time pothole detection
+- GPS speed monitoring
+- Auto-pause when speed < 10 km/h
+- Vibration feedback on detection
+- Automatic upload to backend
+
+### 4. Data Logger (`/logger`)
+- Manual data collection for training
+- Label buttons (Pothole, Speed Bump, Normal)
+- CSV export to device storage
+
+## Sensor Configuration
+
+- **Frequency:** 50 Hz (20ms interval)
+- **Window Size:** 100 samples (2 seconds)
+- **Overlap:** 50% (50 samples)
+- **Gravity Filter:** Low-pass (alpha=0.8)
+
+## Environment Variables
+
+Required in `.env`:
+```
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+## Permissions
+
+### iOS
+- Location (when in use)
+- Motion sensors
+
+### Android
+- ACCESS_FINE_LOCATION
+- ACCESS_COARSE_LOCATION
+- VIBRATE
+
+## Development Notes
+
+### TFLite Integration (Pending)
+Current model uses LSTM layers which require Flex Delegate. Options:
+1. Retrain model without LSTM (TCN-only)
+2. Use TensorFlow.js (slower)
+3. Custom TFLite bridge with Flex support
+
+### Testing
+```bash
+# Run on physical device (required for sensors)
+npx expo run:android --device
+
+# Check sensor availability
+import { Accelerometer } from 'expo-sensors'
+Accelerometer.isAvailableAsync()
+```
+
+## Troubleshooting
+
+### Sensors not working
+- Must use development build (`expo run:android/ios`)
+- Expo Go has limited sensor access
+- Test on physical device (simulators have no sensors)
+
+### Location permission denied
+- Check `app.json` has correct permissions
+- Manually enable in device settings
+
+### Supabase connection failed
+- Verify `.env` credentials
+- Check network connection
+- Ensure database setup script was run
+
+## Next Steps
+
+1. ✅ Setup authentication
+2. ✅ Implement sensor collection
+3. ✅ Create driving screen
+4. 🚧 Integrate TFLite model
+5. 🚧 Add map view
+6. 🚧 Implement offline queue
+
+## License
+
+MIT
