@@ -24,21 +24,33 @@ def train():
     print(f"Training on {len(X_train)} samples, Testing on {len(X_test)} samples.")
     
     # 3. Build Model
-    model = build_tcn_bilstm_model(input_shape=(128, 6), num_classes=3)
+    # Input shape updated to 100 (2 seconds at 50Hz)
+    model = build_tcn_bilstm_model(input_shape=(100, 6), num_classes=3)
     
     # 4. Train
     print("Starting training...")
+    
+    # Calculate Class Weights
+    from sklearn.utils import class_weight
+    classes = np.unique(y_train)
+    weights = class_weight.compute_class_weight(class_weight='balanced', classes=classes, y=y_train)
+    class_weights = dict(zip(classes, weights))
+    print(f"Class Weights: {class_weights}")
+
+    # Callbacks
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
+        tf.keras.callbacks.ModelCheckpoint(MODEL_SAVE_PATH, save_best_only=True, monitor='val_loss')
+    ]
+
     history = model.fit(
         X_train, y_train,
-        epochs=10, # Short for demo
+        epochs=50, 
         batch_size=32,
-        validation_data=(X_test, y_test)
+        validation_data=(X_test, y_test),
+        class_weight=class_weights,
+        callbacks=callbacks
     )
-    
-    # 5. Save Keras Model
-    os.makedirs(os.path.dirname(MODEL_SAVE_PATH), exist_ok=True)
-    model.save(MODEL_SAVE_PATH)
-    print(f"Model saved to {MODEL_SAVE_PATH}")
     
     # 6. Convert to TFLite
     print("Converting to TFLite...")
