@@ -107,9 +107,8 @@ class EnsembleInferenceEngine:
             self._ready = True
 
     def status(self) -> dict[str, object]:
-        self._load_models()
         return {
-            "ready": len(self._enabled_models) > 0,
+            "ready": self._ready and len(self._enabled_models) > 0,
             "enabled_models": self._enabled_models[:],
             "weights": {"h5": self._weights[0], "tflite": self._weights[1]},
             "version": self._version,
