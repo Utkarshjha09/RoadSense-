@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import os
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.events import router as events_router
 from app.core.db import close_pool, run_schema_migrations
@@ -21,6 +22,19 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="RoadSense Cloud API", version="0.1.0", lifespan=lifespan)
+
+cors_raw = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+if cors_raw:
+    allowed_origins = [origin.strip() for origin in cors_raw.split(",") if origin.strip()]
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
 app.include_router(events_router)
 
 

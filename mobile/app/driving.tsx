@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons'
 import MapView, { AnimatedRegion, Marker, Polyline } from 'react-native-maps'
 import * as Location from 'expo-location'
 import { CombinedReading, SensorService, SensorSourceType, SensorStatus } from '../src/services/sensor.service'
-import { PredictionResult } from '../src/services/tflite.service'
+import type { PredictionResult } from '../src/services/tflite.service'
 import { getAnomaliesInViewport, uploadAnomaly } from '../src/services/supabase.service'
 import { theme } from '../src/theme'
 import {

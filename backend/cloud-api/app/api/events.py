@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.events import FeedbackLabelRequest, LiveUploadRequest, SyncUploadRequest
 from app.services.event_ingest import persist_event_batch
@@ -17,8 +17,18 @@ def _dev_endpoints_enabled() -> bool:
     return os.getenv("ENVIRONMENT", "").strip().lower() in {"dev", "development", "local"}
 
 
+def _require_api_secret(x_api_secret: str | None) -> None:
+    expected = os.getenv("API_SECRET", "").strip()
+    if not expected:
+        return
+    incoming = (x_api_secret or "").strip()
+    if incoming != expected:
+        raise HTTPException(status_code=401, detail="Invalid API secret")
+
+
 @router.post("/events/batch")
-def ingest_live_events(payload: LiveUploadRequest) -> dict[str, object]:
+def ingest_live_events(payload: LiveUploadRequest, x_api_secret: str | None = Header(default=None)) -> dict[str, object]:
+    _require_api_secret(x_api_secret)
     result = persist_event_batch(payload.events, ingest_mode="live")
     inserted_id_set = set(result.inserted_event_ids)
     new_events = [event for event in payload.events if event.event_id in inserted_id_set]
@@ -40,7 +50,8 @@ def ingest_live_events(payload: LiveUploadRequest) -> dict[str, object]:
 
 
 @router.post("/sync/batch")
-def ingest_sync_events(payload: SyncUploadRequest) -> dict[str, object]:
+def ingest_sync_events(payload: SyncUploadRequest, x_api_secret: str | None = Header(default=None)) -> dict[str, object]:
+    _require_api_secret(x_api_secret)
     result = persist_event_batch(payload.events, ingest_mode="sync")
     inserted_id_set = set(result.inserted_event_ids)
     new_events = [event for event in payload.events if event.event_id in inserted_id_set]
@@ -65,7 +76,9 @@ def ingest_sync_events(payload: SyncUploadRequest) -> dict[str, object]:
 def get_latest_predictions(
     limit: int = Query(default=20, ge=1, le=200),
     predicted_type: str | None = Query(default=None),
+    x_api_secret: str | None = Header(default=None),
 ) -> dict[str, object]:
+    _require_api_secret(x_api_secret)
     normalized_type = predicted_type.strip().upper() if predicted_type else None
     if normalized_type is not None and normalized_type not in {"SMOOTH", "POTHOLE", "SPEED_BUMP"}:
         return {
@@ -82,7 +95,8 @@ def get_latest_predictions(
 
 
 @router.post("/feedback/label")
-def submit_feedback_label(payload: FeedbackLabelRequest) -> dict[str, object]:
+def submit_feedback_label(payload: FeedbackLabelRequest, x_api_secret: str | None = Header(default=None)) -> dict[str, object]:
+    _require_api_secret(x_api_secret)
     updated = update_training_label(
         event_id=payload.event_id,
         true_label=payload.true_label,
@@ -102,7 +116,8 @@ def submit_feedback_label(payload: FeedbackLabelRequest) -> dict[str, object]:
 
 
 @router.delete("/test-data")
-def clear_test_data(clear_all: bool = Query(default=False)) -> dict[str, object]:
+def clear_test_data(clear_all: bool = Query(default=False), x_api_secret: str | None = Header(default=None)) -> dict[str, object]:
+    _require_api_secret(x_api_secret)
     if not _dev_endpoints_enabled():
         raise HTTPException(status_code=403, detail="Dev-only endpoint is disabled")
 

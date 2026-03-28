@@ -45,7 +45,12 @@ interface CloudReading {
     longitude: number
 }
 
-const CLOUD_API_BASE = (process.env.EXPO_PUBLIC_CLOUD_API_URL || '').trim().replace(/\/+$/, '')
+const CLOUD_API_BASE = (
+    process.env.EXPO_PUBLIC_CLOUD_API_URL
+    || process.env.EXPO_PUBLIC_API_BASE_URL
+    || ''
+).trim().replace(/\/+$/, '')
+const API_SECRET = (process.env.EXPO_PUBLIC_API_SECRET || '').trim()
 const OFFLINE_QUEUE_KEY = 'roadsense_cloud_offline_events_v1'
 const MAX_QUEUE_EVENTS = 5000
 const SYNC_CHUNK_SIZE = 100
@@ -109,6 +114,7 @@ async function postBatch(path: string, events: CloudSensorEvent[]): Promise<{ ok
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...(API_SECRET ? { 'x-api-secret': API_SECRET } : {}),
             },
             body: JSON.stringify({ events }),
             signal: controller.signal,
@@ -148,7 +154,7 @@ export async function buildCloudEvent(source: CloudSensorSourceType, reading: Cl
 
 export async function submitLiveEvents(events: CloudSensorEvent[]): Promise<{ success: boolean; queueError?: string | null }> {
     if (events.length === 0) return { success: true }
-    if (!isCloudApiConfigured) return { success: false, queueError: 'EXPO_PUBLIC_CLOUD_API_URL is not configured' }
+    if (!isCloudApiConfigured) return { success: false, queueError: 'Set EXPO_PUBLIC_CLOUD_API_URL or EXPO_PUBLIC_API_BASE_URL' }
 
     const result = await postBatch('/v1/events/batch', events)
     if (result.ok) {
@@ -185,7 +191,10 @@ export async function fetchLatestPredictions(limit = 20): Promise<CloudPredictio
     try {
         const response = await fetch(`${CLOUD_API_BASE}/v1/predictions/latest?limit=${safeLimit}`, {
             method: 'GET',
-            headers: { Accept: 'application/json' },
+            headers: {
+                Accept: 'application/json',
+                ...(API_SECRET ? { 'x-api-secret': API_SECRET } : {}),
+            },
             signal: controller.signal,
         })
         if (!response.ok) return []

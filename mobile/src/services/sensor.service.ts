@@ -91,7 +91,7 @@ export class SensorService {
 
     async initialize(): Promise<void> {
         if (!isCloudApiConfigured) {
-            throw new Error('EXPO_PUBLIC_CLOUD_API_URL is not configured.');
+            throw new Error('Set EXPO_PUBLIC_CLOUD_API_URL or EXPO_PUBLIC_API_BASE_URL.');
         }
     }
 
