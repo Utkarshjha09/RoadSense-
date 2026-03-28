@@ -157,8 +157,32 @@ app.post('/otp/send', async (req, res) => {
       from: OTP_FROM_EMAIL,
       to: email,
       subject: purpose === 'login' ? 'Your RoadSense login OTP' : 'Your RoadSense password change OTP',
-      text: `Your RoadSense OTP is ${otp}. It expires in ${OTP_EXPIRY_MINUTES} minutes.`,
-      html: `<p>Your RoadSense OTP is <strong>${otp}</strong>.</p><p>It expires in ${OTP_EXPIRY_MINUTES} minutes.</p>`,
+      text: [
+        'Your verification code is:',
+        otp,
+        '',
+        `This code will expire in ${OTP_EXPIRY_MINUTES} minutes.`,
+        '',
+        "If you didn't request this verification, please ignore this email.",
+      ].join('\n'),
+      html: `
+        <div style="background:#f3f3f3;padding:24px 16px;font-family:Arial,Helvetica,sans-serif;color:#2f2f2f">
+          <div style="max-width:640px;margin:0 auto;background:#f3f3f3">
+            <p style="margin:0 0 20px 0;font-size:30px;line-height:1.2;font-weight:700;color:#2f2f2f">
+              Your verification code is:
+            </p>
+            <p style="margin:0 0 26px 0;font-size:56px;line-height:1.05;letter-spacing:4px;font-weight:700;color:#f4511e">
+              ${otp}
+            </p>
+            <p style="margin:0 0 18px 0;font-size:28px;line-height:1.35;color:#2f2f2f">
+              This code will expire in ${OTP_EXPIRY_MINUTES} minutes.
+            </p>
+            <p style="margin:0;font-size:28px;line-height:1.35;color:#2f2f2f">
+              If you didn't request this verification, please ignore this email.
+            </p>
+          </div>
+        </div>
+      `,
     })
   } catch (error) {
     console.error('OTP email send failed:', error)
