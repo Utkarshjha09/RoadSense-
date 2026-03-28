@@ -174,6 +174,27 @@ def _create_predictions_table(conn: Connection) -> None:
             );
             """
         )
+        # Backward-compatible migration path for older/custom predictions schema.
+        cur.execute("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS event_id TEXT;")
+        cur.execute("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS predicted_type TEXT;")
+        cur.execute("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION;")
+        cur.execute(
+            "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS model_version TEXT NOT NULL DEFAULT 'placeholder-v1';"
+        )
+        cur.execute("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+        cur.execute(
+            """
+            UPDATE predictions
+            SET model_version = 'placeholder-v1'
+            WHERE model_version IS NULL OR BTRIM(model_version) = '';
+            """
+        )
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_event_id_unique
+            ON predictions (event_id);
+            """
+        )
         cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_predictions_type_created
