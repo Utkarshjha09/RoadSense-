@@ -87,8 +87,16 @@ def _create_sensor_events_table(conn: Connection) -> None:
             """
         )
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS event_ts TIMESTAMPTZ;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS event_id TEXT;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS ingest_mode TEXT;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ DEFAULT NOW();")
+        cur.execute(
+            """
+            UPDATE sensor_events
+            SET event_id = CONCAT('legacy-', id::text)
+            WHERE event_id IS NULL OR BTRIM(event_id) = '';
+            """
+        )
         cur.execute(
             """
             UPDATE sensor_events
@@ -119,6 +127,13 @@ def _create_sensor_events_table(conn: Connection) -> None:
                     CHECK (source IN ('phone', 'esp32'));
                 END IF;
             END$$;
+            """
+        )
+        cur.execute("ALTER TABLE sensor_events ALTER COLUMN event_id SET NOT NULL;")
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sensor_events_event_id_unique
+            ON sensor_events (event_id);
             """
         )
         cur.execute(
