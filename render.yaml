@@ -6,7 +6,7 @@ services:
     region: oregon
     rootDir: backend/cloud-api
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: sh -c "python -m app.workers.inference_worker & uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -20,27 +20,6 @@ services:
         value: /opt/render/project/src/backend/cloud-api/models/road_sense_model.tflite
       - key: CORS_ALLOWED_ORIGINS
         value: "*"
-      - key: ENVIRONMENT
-        value: production
-      - key: ALLOW_DEV_ENDPOINTS
-        value: "0"
-
-  - type: worker
-    name: roadsense-inference-worker
-    runtime: python
-    plan: free
-    region: oregon
-    rootDir: backend/cloud-api
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.workers.inference_worker
-    autoDeploy: true
-    envVars:
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: MODEL_PATH
-        value: /opt/render/project/src/backend/cloud-api/models/road_sense_model.tflite
       - key: ENVIRONMENT
         value: production
       - key: ALLOW_DEV_ENDPOINTS
