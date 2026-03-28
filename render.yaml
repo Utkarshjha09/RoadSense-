@@ -1,0 +1,71 @@
+databases:
+  - name: roadsense-postgres
+    databaseName: roadsense
+    user: roadsense_user
+    plan: free
+    region: oregon
+
+services:
+  - type: keyvalue
+    name: roadsense-redis
+    plan: free
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    name: roadsense-cloud-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend/cloud-api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: roadsense-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: roadsense-redis
+          property: connectionString
+      - key: API_SECRET
+        generateValue: true
+      - key: MODEL_PATH
+        value: /opt/render/project/src/backend/cloud-api/models/road_sense_model.tflite
+      - key: CORS_ALLOWED_ORIGINS
+        value: "*"
+      - key: ENVIRONMENT
+        value: production
+      - key: ALLOW_DEV_ENDPOINTS
+        value: "0"
+
+  - type: worker
+    name: roadsense-inference-worker
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend/cloud-api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.workers.inference_worker
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: roadsense-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: roadsense-redis
+          property: connectionString
+      - key: MODEL_PATH
+        value: /opt/render/project/src/backend/cloud-api/models/road_sense_model.tflite
+      - key: ENVIRONMENT
+        value: production
+      - key: ALLOW_DEV_ENDPOINTS
+        value: "0"
