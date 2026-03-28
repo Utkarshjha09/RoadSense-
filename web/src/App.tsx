@@ -1,16 +1,18 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from './components/AuthProvider'
 import Layout from './components/Layout/Layout'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import MapView from './pages/MapView'
-import AnomalyManagement from './pages/AnomalyManagement'
-import UserManagement from './pages/UserManagement'
-import Profile from './pages/Profile'
-import About from './pages/About'
 import LoaderBars from './components/LoaderBars'
 import './index.css'
+
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const MapView = lazy(() => import('./pages/MapView'))
+const AnomalyManagement = lazy(() => import('./pages/AnomalyManagement'))
+const UserManagement = lazy(() => import('./pages/UserManagement'))
+const Profile = lazy(() => import('./pages/Profile'))
+const About = lazy(() => import('./pages/About'))
 
 const queryClient = new QueryClient()
 
@@ -72,6 +74,16 @@ function HomeRedirect() {
     return <Navigate to={requiresPasswordSetup ? '/profile' : '/dashboard'} replace />
 }
 
+function RouteLoader() {
+    return (
+        <div className="min-h-screen rs-grid-bg flex items-center justify-center">
+            <div className="rs-panel px-8 py-8 w-[320px]">
+                <LoaderBars label="Loading page..." compact />
+            </div>
+        </div>
+    )
+}
+
 function App() {
     return (
         <QueryClientProvider client={queryClient}>
@@ -88,18 +100,55 @@ function App() {
                             }
                         >
                             <Route index element={<HomeRedirect />} />
-                            <Route path="profile" element={<Profile />} />
-                            <Route path="dashboard" element={<Dashboard />} />
-                            <Route path="map" element={<MapView />} />
-                            <Route path="anomalies" element={<AnomalyManagement />} />
-                            <Route path="about" element={<About />} />
+                            <Route
+                                path="profile"
+                                element={
+                                    <Suspense fallback={<RouteLoader />}>
+                                        <Profile />
+                                    </Suspense>
+                                }
+                            />
+                            <Route
+                                path="dashboard"
+                                element={
+                                    <Suspense fallback={<RouteLoader />}>
+                                        <Dashboard />
+                                    </Suspense>
+                                }
+                            />
+                            <Route
+                                path="map"
+                                element={
+                                    <Suspense fallback={<RouteLoader />}>
+                                        <MapView />
+                                    </Suspense>
+                                }
+                            />
+                            <Route
+                                path="anomalies"
+                                element={
+                                    <Suspense fallback={<RouteLoader />}>
+                                        <AnomalyManagement />
+                                    </Suspense>
+                                }
+                            />
+                            <Route
+                                path="about"
+                                element={
+                                    <Suspense fallback={<RouteLoader />}>
+                                        <About />
+                                    </Suspense>
+                                }
+                            />
                             <Route path="anomaly" element={<Navigate to="/anomalies" replace />} />
                             <Route path="anomaly-management" element={<Navigate to="/anomalies" replace />} />
                             <Route
                                 path="users"
                                 element={
                                     <AdminRoute>
-                                        <UserManagement />
+                                        <Suspense fallback={<RouteLoader />}>
+                                            <UserManagement />
+                                        </Suspense>
                                     </AdminRoute>
                                 }
                             />
