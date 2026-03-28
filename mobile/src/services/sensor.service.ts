@@ -9,10 +9,8 @@ import { combineLatest, Subscription } from 'rxjs';
 import { map } from 'rxjs/operators';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
-import { PredictionResult, SensorReading, TFLiteService } from './tflite.service';
-import { appendLoggedSample } from './data-logger.service';
-import { uploadSensorEvent } from './supabase.service';
-import { buildCloudEvent, CloudSensorEvent, flushOfflineEvents, isCloudApiConfigured, submitLiveEvents } from './cloud-api.service';
+import type { PredictionResult } from './tflite.service';
+import { buildCloudEvent, CloudSensorEvent, fetchLatestPredictions, flushOfflineEvents, isCloudApiConfigured, submitLiveEvents } from './cloud-api.service';
 
 const UPDATE_INTERVAL = 20;
 setUpdateIntervalForType(SensorTypes.accelerometer, UPDATE_INTERVAL);
@@ -59,7 +57,6 @@ export class SensorService {
     private subscription: Subscription | null = null;
     private locationSubscription: ReturnType<typeof setInterval> | null = null;
     private esp32Socket: WebSocket | null = null;
-    private readonly tfliteService: TFLiteService;
     private isCollecting = false;
     private readonly onPrediction?: (prediction: PredictionResult) => void;
     private readonly onAnomaly?: (prediction: PredictionResult) => void;
@@ -72,6 +69,8 @@ export class SensorService {
     private cloudBuffer: CloudSensorEvent[] = [];
     private cloudSyncInterval: ReturnType<typeof setInterval> | null = null;
     private cloudFlushInProgress = false;
+    private currentDeviceId: string | null = null;
+    private lastHandledPredictionEventId: string | null = null;
 
     constructor(
         onPrediction?: (prediction: PredictionResult) => void,
@@ -79,7 +78,6 @@ export class SensorService {
         onReading?: (reading: CombinedReading) => void,
         onStatus?: (status: SensorStatus) => void
     ) {
-        this.tfliteService = new TFLiteService();
         this.onPrediction = onPrediction;
         this.onAnomaly = onAnomaly;
         this.onReading = onReading;
@@ -92,7 +90,9 @@ export class SensorService {
     }
 
     async initialize(): Promise<void> {
-        await this.tfliteService.loadModel();
+        if (!isCloudApiConfigured) {
+            throw new Error('EXPO_PUBLIC_CLOUD_API_URL is not configured.');
+        }
     }
 
     private emitStatus(state: SensorStatus['state'], message: string): void {
@@ -112,10 +112,6 @@ export class SensorService {
                 latitude: location.coords.latitude,
                 longitude: location.coords.longitude,
             };
-            this.tfliteService.updateLocation(
-                this.currentLocation.latitude,
-                this.currentLocation.longitude
-            );
         } catch (error) {
             console.warn('Could not get initial location:', error);
         }
@@ -129,10 +125,6 @@ export class SensorService {
                     latitude: location.coords.latitude,
                     longitude: location.coords.longitude,
                 };
-                this.tfliteService.updateLocation(
-                    this.currentLocation.latitude,
-                    this.currentLocation.longitude
-                );
             } catch (error) {
                 console.warn('Location update failed:', error);
             }
@@ -201,76 +193,13 @@ export class SensorService {
                 latitude: reading.latitude,
                 longitude: reading.longitude,
             };
-            this.tfliteService.updateLocation(reading.latitude, reading.longitude);
         }
-
-        const sensorReading: SensorReading = {
-            ax: reading.ax,
-            ay: reading.ay,
-            az: reading.az,
-            gx: reading.gx,
-            gy: reading.gy,
-            gz: reading.gz,
-        };
 
         this.queueLogRow(
             `${reading.timestamp},${this.currentSource},${reading.ax},${reading.ay},${reading.az},${reading.gx},${reading.gy},${reading.gz},${reading.latitude},${reading.longitude},,\n`
         );
         if (this.logBuffer.length >= 40) {
             await this.flushLogs();
-        }
-
-        this.tfliteService.addSensorReading(sensorReading);
-
-        if (!this.tfliteService.shouldRunPrediction()) {
-            return;
-        }
-
-        const prediction = await this.tfliteService.runPrediction();
-        if (!prediction) {
-            return;
-        }
-
-        this.queueLogRow(
-            `${Date.now()},${this.currentSource},${reading.ax},${reading.ay},${reading.az},${reading.gx},${reading.gy},${reading.gz},${prediction.latitude},${prediction.longitude},${prediction.className},${prediction.confidence}\n`
-        );
-        if (this.logBuffer.length >= 40) {
-            await this.flushLogs();
-        }
-
-        console.log(`Prediction: ${prediction.className} (${prediction.confidence.toFixed(1)}%)`);
-        this.onPrediction?.(prediction);
-
-        const normalizedType =
-            prediction.className === 'Pothole'
-                ? 'POTHOLE'
-                : prediction.className === 'Speed Bump'
-                    ? 'SPEED_BUMP'
-                    : 'SMOOTH';
-
-        await appendLoggedSample({
-            id: `drv-${Date.now()}-${Math.round(Math.random() * 100000)}`,
-            timestamp: new Date().toISOString(),
-            source: 'driving',
-            label: normalizedType === 'SMOOTH' ? 'NORMAL' : normalizedType,
-            latitude: prediction.latitude,
-            longitude: prediction.longitude,
-            confidence: prediction.confidence / 100,
-            data: [[reading.ax, reading.ay, reading.az, reading.gx, reading.gy, reading.gz]],
-        });
-
-        void uploadSensorEvent({
-            source: this.currentSource,
-            predictedType: normalizedType,
-            confidence: Math.max(0, Math.min(1, prediction.confidence / 100)),
-            sampleCount: 100,
-            latitude: prediction.latitude,
-            longitude: prediction.longitude,
-        });
-
-        if ((prediction.classId === 1 || prediction.classId === 2) && prediction.confidence > 60) {
-            console.log(`Anomaly detected: ${prediction.className} at ${prediction.confidence.toFixed(1)}%`);
-            this.onAnomaly?.(prediction);
         }
     }
 
@@ -280,6 +209,7 @@ export class SensorService {
         }
         try {
             const event = await buildCloudEvent(this.currentSource, reading);
+            this.currentDeviceId = event.device_id;
             this.cloudBuffer.push(event);
             if (this.cloudBuffer.length >= 50) {
                 await this.flushCloudBuffer();
@@ -303,11 +233,44 @@ export class SensorService {
             }
             if (result.success) {
                 await flushOfflineEvents();
+                await this.pullLatestCloudPrediction();
             }
         } catch (error) {
             console.warn('Cloud flush failed:', error);
         } finally {
             this.cloudFlushInProgress = false;
+        }
+    }
+
+    private async pullLatestCloudPrediction(): Promise<void> {
+        if (!this.currentDeviceId) return;
+        const items = await fetchLatestPredictions(30);
+        const latest = items.find((item) => item.device_id === this.currentDeviceId);
+        if (!latest || latest.event_id === this.lastHandledPredictionEventId) {
+            return;
+        }
+        this.lastHandledPredictionEventId = latest.event_id;
+
+        const classId = latest.predicted_type === 'POTHOLE' ? 1 : latest.predicted_type === 'SPEED_BUMP' ? 2 : 0;
+        const className = classId === 1 ? 'Pothole' : classId === 2 ? 'Speed Bump' : 'Smooth';
+        const confidence = Math.max(0, Math.min(100, latest.confidence * 100));
+        const prediction: PredictionResult = {
+            classId,
+            className,
+            confidence,
+            probabilities: {
+                smooth: classId === 0 ? confidence : 0,
+                pothole: classId === 1 ? confidence : 0,
+                speedBump: classId === 2 ? confidence : 0,
+            },
+            latitude: Number(latest.lat || this.currentLocation.latitude),
+            longitude: Number(latest.lng || this.currentLocation.longitude),
+            timestamp: Date.parse(latest.created_at) || Date.now(),
+        };
+
+        this.onPrediction?.(prediction);
+        if ((prediction.classId === 1 || prediction.classId === 2) && prediction.confidence > 60) {
+            this.onAnomaly?.(prediction);
         }
     }
 
@@ -395,7 +358,7 @@ export class SensorService {
 
         this.currentSource = sourceConfig.type;
         this.isCollecting = true;
-        this.tfliteService.reset();
+        this.lastHandledPredictionEventId = null;
         this.cloudBuffer = [];
         await this.initCsvLogger();
         this.emitStatus('connecting', sourceConfig.type === 'phone' ? 'Preparing phone sensors' : 'Preparing ESP32 stream');
@@ -449,7 +412,6 @@ export class SensorService {
 
     dispose(): void {
         void this.stopCollection();
-        this.tfliteService.dispose();
     }
 }
 

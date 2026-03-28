@@ -41,6 +41,7 @@ app-example
 # generated native folders
 /ios
 /android
+.gradle-user-home/
 
 # local logs that can contain env values
 eas-log-*.txt

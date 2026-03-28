@@ -20,6 +20,19 @@ export interface CloudSensorEvent {
     speed?: number
 }
 
+export interface CloudPredictionItem {
+    event_id: string
+    predicted_type: 'SMOOTH' | 'POTHOLE' | 'SPEED_BUMP'
+    confidence: number
+    model_version: string
+    created_at: string
+    device_id: string
+    source: CloudSensorSourceType
+    event_ts: string
+    lat: number
+    lng: number
+}
+
 interface CloudReading {
     ax: number
     ay: number
@@ -161,5 +174,26 @@ export async function flushOfflineEvents(): Promise<void> {
         }
     } finally {
         flushing = false
+    }
+}
+
+export async function fetchLatestPredictions(limit = 20): Promise<CloudPredictionItem[]> {
+    if (!isCloudApiConfigured) return []
+    const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)))
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    try {
+        const response = await fetch(`${CLOUD_API_BASE}/v1/predictions/latest?limit=${safeLimit}`, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+        })
+        if (!response.ok) return []
+        const body = await response.json()
+        return Array.isArray(body?.items) ? (body.items as CloudPredictionItem[]) : []
+    } catch {
+        return []
+    } finally {
+        clearTimeout(timeout)
     }
 }
