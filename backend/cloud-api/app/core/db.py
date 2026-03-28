@@ -88,6 +88,17 @@ def _create_sensor_events_table(conn: Connection) -> None:
         )
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS event_ts TIMESTAMPTZ;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS event_id TEXT;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS device_id TEXT;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS source TEXT;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS ax DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS ay DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS az DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS gx DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS gy DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS gz DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS speed DOUBLE PRECISION;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS ingest_mode TEXT;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ DEFAULT NOW();")
         cur.execute(
@@ -102,6 +113,28 @@ def _create_sensor_events_table(conn: Connection) -> None:
             UPDATE sensor_events
             SET event_ts = COALESCE(event_ts, received_at, NOW())
             WHERE event_ts IS NULL;
+            """
+        )
+        cur.execute(
+            """
+            UPDATE sensor_events
+            SET
+                device_id = COALESCE(NULLIF(device_id, ''), 'legacy-device'),
+                source = COALESCE(NULLIF(source, ''), 'phone'),
+                lat = COALESCE(lat, 0),
+                lng = COALESCE(lng, 0),
+                ax = COALESCE(ax, 0),
+                ay = COALESCE(ay, 0),
+                az = COALESCE(az, 0),
+                gx = COALESCE(gx, 0),
+                gy = COALESCE(gy, 0),
+                gz = COALESCE(gz, 0)
+            WHERE
+                device_id IS NULL OR device_id = '' OR
+                source IS NULL OR source = '' OR
+                lat IS NULL OR lng IS NULL OR
+                ax IS NULL OR ay IS NULL OR az IS NULL OR
+                gx IS NULL OR gy IS NULL OR gz IS NULL;
             """
         )
         cur.execute(
