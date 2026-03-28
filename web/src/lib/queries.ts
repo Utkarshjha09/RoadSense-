@@ -1,4 +1,4 @@
-import { supabase, Anomaly, Profile } from './supabase'
+import { supabase, Anomaly, Profile, RepairValidationStat, RoadStateClusterPoint } from './supabase'
 
 // Get anomalies in viewport
 export async function getAnomaliesInViewport(
@@ -98,7 +98,7 @@ export async function getAllUsers() {
 }
 
 // Update user role
-export async function updateUserRole(userId: string, role: 'driver' | 'admin') {
+export async function updateUserRole(userId: string, role: 'driver' | 'owner' | 'admin') {
     const { error } = await supabase
         .from('profiles')
         .update({ role })
@@ -116,4 +116,34 @@ export async function getUserContributions(userId: string) {
 
     if (error) throw error
     return data as Anomaly[]
+}
+
+// Get repair validation status using post-repair next-N event window
+export async function getRepairValidationStats(limit = 100) {
+    const { data, error } = await supabase.rpc('get_repair_validation_stats', {
+        p_limit: limit,
+    })
+
+    if (error) throw error
+    return (data || []) as RepairValidationStat[]
+}
+
+// Get active road-state clusters (live flags) in viewport
+export async function getActiveRoadStateInViewport(
+    minLat: number,
+    minLng: number,
+    maxLat: number,
+    maxLng: number,
+    limit = 1000
+) {
+    const { data, error } = await supabase.rpc('get_active_road_state_in_viewport', {
+        min_lat: minLat,
+        min_lng: minLng,
+        max_lat: maxLat,
+        max_lng: maxLng,
+        limit_count: limit,
+    })
+
+    if (error) throw error
+    return (data || []) as RoadStateClusterPoint[]
 }

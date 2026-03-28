@@ -6,9 +6,15 @@ Supabase-based backend infrastructure for RoadSense pothole detection system.
 
 ```
 backend/
+├── inference-service/
+│   ├── app/
+│   │   └── main.py                # FastAPI cloud inference API
+│   ├── .env.example
+│   └── requirements.txt
 ├── supabase/
 │   ├── migrations/
 │   │   └── 001_setup.sql          # Complete database schema
+│   │   └── 004_add_road_state_aggregation.sql  # Raw prediction events + live road-state clusters
 │   └── functions/
 │       └── upload-anomaly/
 │           └── index.ts            # Edge Function for anomaly uploads
@@ -44,6 +50,8 @@ backend/
 - ✅ PostGIS extension for geospatial queries
 - ✅ `profiles` table (user management)
 - ✅ `anomalies` table with GEOGRAPHY column
+- ✅ `sensor_events` table for raw prediction history
+- ✅ `road_state_clusters` table for live road truth per location
 - ✅ Spatial GIST index for fast map queries
 - ✅ Row Level Security (RLS) policies
 
@@ -51,9 +59,14 @@ backend/
 - `get_anomalies_in_viewport(min_lat, min_lng, max_lat, max_lng)` - Fetch anomalies in bounding box
 - `get_anomalies_near_point(lat, lng, radius_meters)` - Find nearby anomalies
 - `insert_anomaly(...)` - Helper for Edge Function
+- `record_sensor_event(...)` - Store one prediction event and refresh the location cluster
+- `get_active_road_state_in_viewport(...)` - Fetch current clustered road-state markers
 
 ### Edge Functions
 - `upload-anomaly` - Serverless API for mobile app uploads
+
+### Cloud Inference
+- `inference-service` - FastAPI service that receives IMU + GPS windows, runs the trained model, and stores anomalies in Supabase
 
 ## API Endpoints
 

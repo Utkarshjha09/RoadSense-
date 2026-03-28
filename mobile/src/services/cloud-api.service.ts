@@ -1,0 +1,165 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+export type CloudSensorSourceType = 'phone' | 'esp32'
+
+type IngestMode = 'live' | 'sync'
+
+export interface CloudSensorEvent {
+    event_id: string
+    device_id: string
+    source: CloudSensorSourceType
+    timestamp: string
+    lat: number
+    lng: number
+    ax: number
+    ay: number
+    az: number
+    gx: number
+    gy: number
+    gz: number
+    speed?: number
+}
+
+interface CloudReading {
+    ax: number
+    ay: number
+    az: number
+    gx: number
+    gy: number
+    gz: number
+    timestamp: number
+    latitude: number
+    longitude: number
+}
+
+const CLOUD_API_BASE = (process.env.EXPO_PUBLIC_CLOUD_API_URL || '').trim().replace(/\/+$/, '')
+const OFFLINE_QUEUE_KEY = 'roadsense_cloud_offline_events_v1'
+const MAX_QUEUE_EVENTS = 5000
+const SYNC_CHUNK_SIZE = 100
+
+let cachedDeviceId: string | null = null
+let localCounter = 0
+let flushing = false
+
+export const isCloudApiConfigured = Boolean(CLOUD_API_BASE)
+
+function makeEventId(deviceId: string, timestampMs: number): string {
+    localCounter = (localCounter + 1) % 1000000
+    return `${deviceId}-${timestampMs}-${localCounter}`
+}
+
+function randomId(prefix: string): string {
+    return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+}
+
+async function getDeviceId(): Promise<string> {
+    if (cachedDeviceId) return cachedDeviceId
+    const key = 'roadsense_cloud_device_id'
+    const existing = (await AsyncStorage.getItem(key))?.trim()
+    if (existing) {
+        cachedDeviceId = existing
+        return existing
+    }
+    const generated = randomId('device')
+    await AsyncStorage.setItem(key, generated)
+    cachedDeviceId = generated
+    return generated
+}
+
+async function readOfflineQueue(): Promise<CloudSensorEvent[]> {
+    try {
+        const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_KEY)
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? (parsed as CloudSensorEvent[]) : []
+    } catch {
+        return []
+    }
+}
+
+async function writeOfflineQueue(events: CloudSensorEvent[]): Promise<void> {
+    const trimmed = events.slice(-MAX_QUEUE_EVENTS)
+    await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(trimmed))
+}
+
+async function enqueueOffline(events: CloudSensorEvent[]): Promise<void> {
+    if (events.length === 0) return
+    const current = await readOfflineQueue()
+    await writeOfflineQueue([...current, ...events])
+}
+
+async function postBatch(path: string, events: CloudSensorEvent[]): Promise<{ ok: boolean; body?: any }> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    try {
+        const response = await fetch(`${CLOUD_API_BASE}${path}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ events }),
+            signal: controller.signal,
+        })
+        let body: any = null
+        try {
+            body = await response.json()
+        } catch {
+            body = null
+        }
+        return { ok: response.ok, body }
+    } catch {
+        return { ok: false }
+    } finally {
+        clearTimeout(timeout)
+    }
+}
+
+export async function buildCloudEvent(source: CloudSensorSourceType, reading: CloudReading): Promise<CloudSensorEvent> {
+    const deviceId = await getDeviceId()
+    const timestampMs = Number(reading.timestamp) || Date.now()
+    return {
+        event_id: makeEventId(deviceId, timestampMs),
+        device_id: deviceId,
+        source,
+        timestamp: new Date(timestampMs).toISOString(),
+        lat: reading.latitude,
+        lng: reading.longitude,
+        ax: reading.ax,
+        ay: reading.ay,
+        az: reading.az,
+        gx: reading.gx,
+        gy: reading.gy,
+        gz: reading.gz,
+    }
+}
+
+export async function submitLiveEvents(events: CloudSensorEvent[]): Promise<{ success: boolean; queueError?: string | null }> {
+    if (events.length === 0) return { success: true }
+    if (!isCloudApiConfigured) return { success: false, queueError: 'EXPO_PUBLIC_CLOUD_API_URL is not configured' }
+
+    const result = await postBatch('/v1/events/batch', events)
+    if (result.ok) {
+        return { success: true, queueError: result.body?.queue_error ?? null }
+    }
+    await enqueueOffline(events)
+    return { success: false, queueError: 'Live upload failed; queued for retry' }
+}
+
+export async function flushOfflineEvents(): Promise<void> {
+    if (!isCloudApiConfigured || flushing) return
+    flushing = true
+    try {
+        let queue = await readOfflineQueue()
+        while (queue.length > 0) {
+            const chunk = queue.slice(0, SYNC_CHUNK_SIZE)
+            const result = await postBatch('/v1/sync/batch', chunk)
+            if (!result.ok) {
+                break
+            }
+            queue = queue.slice(chunk.length)
+            await writeOfflineQueue(queue)
+        }
+    } finally {
+        flushing = false
+    }
+}

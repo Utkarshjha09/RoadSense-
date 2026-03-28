@@ -8,6 +8,8 @@ const pageTitles: Record<string, string> = {
     '/map': 'Map View',
     '/anomalies': 'Anomaly Management',
     '/users': 'User Management',
+    '/profile': 'Profile',
+    '/about': 'About',
 }
 
 export default function Layout() {
@@ -15,11 +17,11 @@ export default function Layout() {
     const title = pageTitles[location.pathname] || 'RoadSense Admin'
 
     return (
-        <div className="flex h-screen bg-slate-900">
+        <div className="flex h-screen rs-grid-bg">
             <Sidebar />
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header title={title} />
-                <main className="flex-1 overflow-auto p-8">
+                <main className="flex-1 overflow-auto p-6 md:p-8">
                     <Outlet />
                 </main>
             </div>

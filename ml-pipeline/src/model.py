@@ -29,7 +29,8 @@ def build_tcn_bilstm_model(input_shape=(128, 6), num_classes=3):
     x = layers.SpatialDropout1D(0.2)(x)
 
     # 2. BiLSTM Block (Bidirectional Long Short-Term Memory)
-    x = layers.Bidirectional(layers.LSTM(64, return_sequences=False))(x)
+    # `unroll=True` avoids TensorList ops so TFLite can run without Select TF Ops.
+    x = layers.Bidirectional(layers.LSTM(64, return_sequences=False, unroll=True))(x)
     
     # 3. Classification Head
     x = layers.Dense(32, activation='relu')(x)

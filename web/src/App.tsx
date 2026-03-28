@@ -7,17 +7,33 @@ import Dashboard from './pages/Dashboard'
 import MapView from './pages/MapView'
 import AnomalyManagement from './pages/AnomalyManagement'
 import UserManagement from './pages/UserManagement'
+import Profile from './pages/Profile'
+import About from './pages/About'
+import LoaderBars from './components/LoaderBars'
 import './index.css'
 
 const queryClient = new QueryClient()
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-    const { user, isAdmin, loading } = useAuth()
+function FullScreenMessage({ title, body }: { title: string; body: string }) {
+    return (
+        <div className="min-h-screen rs-grid-bg flex items-center justify-center p-4">
+            <div className="rs-panel p-8 max-w-lg">
+                <h2 className="text-2xl text-[var(--rs-text)] mb-4">{title}</h2>
+                <p className="text-[var(--rs-muted)]">{body}</p>
+            </div>
+        </div>
+    )
+}
+
+function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
+    const { user, loading, requiresLoginOtpVerification } = useAuth()
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-                <div className="text-white text-xl">Loading...</div>
+            <div className="min-h-screen rs-grid-bg flex items-center justify-center">
+                <div className="rs-panel px-8 py-8 w-[320px]">
+                    <LoaderBars label="Loading your session..." compact />
+                </div>
             </div>
         )
     }
@@ -26,18 +42,34 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
         return <Navigate to="/login" replace />
     }
 
+    if (requiresLoginOtpVerification) {
+        return <Navigate to="/login" replace />
+    }
+
+    return <>{children}</>
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+    const { isAdmin } = useAuth()
+
     if (!isAdmin) {
         return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-                <div className="bg-slate-800 rounded-lg p-8 border border-slate-700">
-                    <h2 className="text-2xl font-bold text-white mb-4">Access Denied</h2>
-                    <p className="text-slate-400">You need admin privileges to access this dashboard.</p>
-                </div>
-            </div>
+            <FullScreenMessage
+                title="Access Denied"
+                body="Only admins can access user management."
+            />
         )
     }
 
     return <>{children}</>
+}
+
+function HomeRedirect() {
+    const { requiresPasswordSetup, requiresLoginOtpVerification } = useAuth()
+    if (requiresLoginOtpVerification) {
+        return <Navigate to="/login" replace />
+    }
+    return <Navigate to={requiresPasswordSetup ? '/profile' : '/dashboard'} replace />
 }
 
 function App() {
@@ -50,16 +82,27 @@ function App() {
                         <Route
                             path="/"
                             element={
-                                <ProtectedRoute>
+                                <AuthenticatedRoute>
                                     <Layout />
-                                </ProtectedRoute>
+                                </AuthenticatedRoute>
                             }
                         >
-                            <Route index element={<Navigate to="/dashboard" replace />} />
+                            <Route index element={<HomeRedirect />} />
+                            <Route path="profile" element={<Profile />} />
                             <Route path="dashboard" element={<Dashboard />} />
                             <Route path="map" element={<MapView />} />
                             <Route path="anomalies" element={<AnomalyManagement />} />
-                            <Route path="users" element={<UserManagement />} />
+                            <Route path="about" element={<About />} />
+                            <Route path="anomaly" element={<Navigate to="/anomalies" replace />} />
+                            <Route path="anomaly-management" element={<Navigate to="/anomalies" replace />} />
+                            <Route
+                                path="users"
+                                element={
+                                    <AdminRoute>
+                                        <UserManagement />
+                                    </AdminRoute>
+                                }
+                            />
                         </Route>
                     </Routes>
                 </BrowserRouter>

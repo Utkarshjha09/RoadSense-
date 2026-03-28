@@ -6,9 +6,9 @@ from preprocessing import load_and_preprocess_data, create_synthetic_data
 from model import build_tcn_bilstm_model
 
 # Config
-RAW_DATA_DIR = "../raw_data"
-MODEL_SAVE_PATH = "../models/final/road_sense_model.h5"
-TFLITE_SAVE_PATH = "../models/final/road_sense_model.tflite"
+RAW_DATA_DIR = "../../raw_data"
+MODEL_SAVE_PATH = "../../models/final/road_sense_model.h5"
+TFLITE_SAVE_PATH = "../../models/final/road_sense_model.tflite"
 
 def train():
     # 1. Load Data
@@ -18,14 +18,19 @@ def train():
     if len(X) == 0:
         print("No data found in raw_data. Generating SYNTHETIC data for demonstration.")
         X, y = create_synthetic_data(num_samples=500)
+
+    if not np.isfinite(X).all():
+        raise ValueError("Training data contains NaN/Inf after preprocessing.")
+    if not np.isfinite(y).all():
+        raise ValueError("Labels contain NaN/Inf after preprocessing.")
     
     # 2. Split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     print(f"Training on {len(X_train)} samples, Testing on {len(X_test)} samples.")
     
     # 3. Build Model
-    # Input shape updated to 100 (2 seconds at 50Hz)
-    model = build_tcn_bilstm_model(input_shape=(100, 6), num_classes=3)
+    input_shape = (X_train.shape[1], X_train.shape[2])
+    model = build_tcn_bilstm_model(input_shape=input_shape, num_classes=3)
     
     # 4. Train
     print("Starting training...")
@@ -40,7 +45,8 @@ def train():
     # Callbacks
     callbacks = [
         tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-        tf.keras.callbacks.ModelCheckpoint(MODEL_SAVE_PATH, save_best_only=True, monitor='val_loss')
+        tf.keras.callbacks.ModelCheckpoint(MODEL_SAVE_PATH, save_best_only=True, monitor='val_loss'),
+        tf.keras.callbacks.TerminateOnNaN(),
     ]
 
     history = model.fit(
@@ -56,15 +62,12 @@ def train():
     print("Converting to TFLite...")
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     
-    # Enable SELECT_TF_OPS to support LSTM layers
-    converter.target_spec.supported_ops = [
-        tf.lite.OpsSet.TFLITE_BUILTINS,  # Enable TensorFlow Lite ops
-        tf.lite.OpsSet.SELECT_TF_OPS     # Enable TensorFlow ops (needed for LSTM)
-    ]
-    converter._experimental_lower_tensor_list_ops = False
+    # Convert with builtins only for wider runtime compatibility.
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
     
     # Optimization/Quantization (Optional but recommended for mobile)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    # Keep float conversion for stability/debuggability.
+    # Quantization can be reintroduced later with a representative dataset.
     
     tflite_model = converter.convert()
     

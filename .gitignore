@@ -18,14 +18,15 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv/
 venv/
 env/
 ENV/
 
-# ML Models (large files)
-*.h5
-*.tflite
-*.pb
+# ML Models (large files) - tracked for builds
+# *.h5
+# *.tflite
+# *.pb
 
 # Data
 raw_downloads/

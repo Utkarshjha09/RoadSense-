@@ -1,0 +1,35 @@
+# Keep EAS upload lean and force clean cloud prebuild
+android/
+ios/
+node_modules/
+.gradle-local/
+
+# Local caches / temp
+.expo/
+.gradle/
+build/
+dist/
+web-build/
+coverage/
+
+# Native/build artifacts
+*.apk
+*.aab
+*.apks
+*.keystore
+*.hprof
+android/**/*.cxx/
+android/**/build/
+android/.gradle/
+
+# Logs and local diagnostics
+*.log
+eas-log-*.txt
+latest-eas-log-*.txt
+build-view*.json
+
+# IDE / OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
