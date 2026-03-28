@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.events import router as events_router
 from app.core.db import close_pool, run_schema_migrations
 from app.core.queue import close_redis
+from app.services.inference import get_inference_status
 
 
 @asynccontextmanager
@@ -35,4 +36,9 @@ def root() -> dict[str, object]:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    status = get_inference_status()
+    return {
+        "status": "ok",
+        "model_ready": "true" if bool(status.get("ready")) else "false",
+        "model_version": str(status.get("version", "unknown")),
+    }
