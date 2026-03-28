@@ -41,3 +41,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+# local logs that can contain env values
+eas-log-*.txt
+latest-eas-log-*.txt
