@@ -185,6 +185,51 @@ def _create_sensor_events_table(conn: Connection) -> None:
             END$$;
             """
         )
+        # Some legacy datasets used a different schema in sensor_events.
+        # If those columns exist, they must be nullable for ingestion inserts.
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'predicted_type'
+                ) THEN
+                    ALTER TABLE sensor_events ALTER COLUMN predicted_type DROP NOT NULL;
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'confidence'
+                ) THEN
+                    ALTER TABLE sensor_events ALTER COLUMN confidence DROP NOT NULL;
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'sample_count'
+                ) THEN
+                    ALTER TABLE sensor_events ALTER COLUMN sample_count DROP NOT NULL;
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'location'
+                ) THEN
+                    ALTER TABLE sensor_events ALTER COLUMN location DROP NOT NULL;
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'cluster_id'
+                ) THEN
+                    ALTER TABLE sensor_events ALTER COLUMN cluster_id DROP NOT NULL;
+                END IF;
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'user_id'
+                ) THEN
+                    ALTER TABLE sensor_events ALTER COLUMN user_id DROP NOT NULL;
+                END IF;
+            END$$;
+            """
+        )
         cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_sensor_events_event_ts
