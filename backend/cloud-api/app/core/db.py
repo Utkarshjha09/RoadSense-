@@ -39,7 +39,7 @@ def run_schema_migrations() -> None:
             conn.commit()
     except PsycopgError as exc:
         raise RuntimeError(
-            "Unable to connect to Postgres. Ensure DATABASE_URL is correct and the DB server is running."
+            "Database migration failed. Check DATABASE_URL and ensure schema permissions are correct."
         ) from exc
 
 
@@ -65,6 +65,76 @@ def _create_sensor_events_table(conn: Connection) -> None:
                 ingest_mode TEXT NOT NULL CHECK (ingest_mode IN ('live', 'sync')),
                 received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            """
+        )
+        # Backward-compatible migration path for older schemas.
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'timestamp'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'sensor_events' AND column_name = 'event_ts'
+                ) THEN
+                    ALTER TABLE sensor_events RENAME COLUMN "timestamp" TO event_ts;
+                END IF;
+            END$$;
+            """
+        )
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS event_ts TIMESTAMPTZ;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS ingest_mode TEXT;")
+        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ DEFAULT NOW();")
+        cur.execute(
+            """
+            UPDATE sensor_events
+            SET event_ts = COALESCE(event_ts, received_at, NOW())
+            WHERE event_ts IS NULL;
+            """
+        )
+        cur.execute(
+            """
+            UPDATE sensor_events
+            SET ingest_mode = 'live'
+            WHERE ingest_mode IS NULL;
+            """
+        )
+        cur.execute("ALTER TABLE sensor_events ALTER COLUMN event_ts SET NOT NULL;")
+        cur.execute("ALTER TABLE sensor_events ALTER COLUMN ingest_mode SET NOT NULL;")
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'sensor_events_source_check'
+                ) THEN
+                    ALTER TABLE sensor_events
+                    ADD CONSTRAINT sensor_events_source_check
+                    CHECK (source IN ('phone', 'esp32'));
+                END IF;
+            END$$;
+            """
+        )
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'sensor_events_ingest_mode_check'
+                ) THEN
+                    ALTER TABLE sensor_events
+                    ADD CONSTRAINT sensor_events_ingest_mode_check
+                    CHECK (ingest_mode IN ('live', 'sync'));
+                END IF;
+            END$$;
             """
         )
         cur.execute(
