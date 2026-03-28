@@ -68,3 +68,19 @@ class LiveUploadRequest(EventBatch):
 
 class SyncUploadRequest(EventBatch):
     pass
+
+
+class FeedbackLabelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: Annotated[str, Field(min_length=1, max_length=128)]
+    true_label: Annotated[str, Field(min_length=3, max_length=16)]
+    label_source: Annotated[str, Field(min_length=2, max_length=64)] = "app_feedback"
+
+    @field_validator("true_label")
+    @classmethod
+    def normalize_label(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in {"SMOOTH", "POTHOLE", "SPEED_BUMP"}:
+            raise ValueError("true_label must be one of: SMOOTH, POTHOLE, SPEED_BUMP")
+        return normalized

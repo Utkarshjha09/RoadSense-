@@ -36,6 +36,7 @@ def run_schema_migrations() -> None:
         with pool.connection() as conn:
             _create_sensor_events_table(conn)
             _create_predictions_table(conn)
+            _create_training_samples_table(conn)
             conn.commit()
     except PsycopgError as exc:
         raise RuntimeError(
@@ -277,5 +278,72 @@ def _create_predictions_table(conn: Connection) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_predictions_type_created
             ON predictions (predicted_type, created_at DESC);
+            """
+        )
+
+
+def _create_training_samples_table(conn: Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS training_samples (
+                id BIGSERIAL PRIMARY KEY,
+                event_id TEXT NOT NULL UNIQUE,
+                device_id TEXT NOT NULL,
+                source TEXT NOT NULL CHECK (source IN ('phone', 'esp32')),
+                event_ts TIMESTAMPTZ NOT NULL,
+                lat DOUBLE PRECISION NOT NULL,
+                lng DOUBLE PRECISION NOT NULL,
+                ax DOUBLE PRECISION NOT NULL,
+                ay DOUBLE PRECISION NOT NULL,
+                az DOUBLE PRECISION NOT NULL,
+                gx DOUBLE PRECISION NOT NULL,
+                gy DOUBLE PRECISION NOT NULL,
+                gz DOUBLE PRECISION NOT NULL,
+                speed DOUBLE PRECISION NULL,
+                predicted_type TEXT NULL CHECK (predicted_type IN ('SMOOTH', 'POTHOLE', 'SPEED_BUMP')),
+                predicted_confidence DOUBLE PRECISION NULL CHECK (predicted_confidence >= 0 AND predicted_confidence <= 1),
+                true_label TEXT NULL CHECK (true_label IN ('SMOOTH', 'POTHOLE', 'SPEED_BUMP')),
+                label_source TEXT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS event_id TEXT;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS device_id TEXT;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS source TEXT;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS event_ts TIMESTAMPTZ;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS ax DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS ay DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS az DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS gx DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS gy DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS gz DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS speed DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS predicted_type TEXT;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS predicted_confidence DOUBLE PRECISION;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS true_label TEXT;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS label_source TEXT;")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+        cur.execute("ALTER TABLE training_samples ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_training_samples_event_id_unique
+            ON training_samples (event_id);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_training_samples_true_label
+            ON training_samples (true_label);
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_training_samples_event_ts
+            ON training_samples (event_ts DESC);
             """
         )

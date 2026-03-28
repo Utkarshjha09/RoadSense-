@@ -2,9 +2,9 @@ import os
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.models.events import LiveUploadRequest, SyncUploadRequest
+from app.models.events import FeedbackLabelRequest, LiveUploadRequest, SyncUploadRequest
 from app.services.event_ingest import persist_event_batch
-from app.services.prediction_store import fetch_latest_predictions
+from app.services.prediction_store import fetch_latest_predictions, update_training_label
 from app.services.queue_publish import enqueue_for_inference
 from app.services.test_data import delete_placeholder_test_data, truncate_all_event_data
 
@@ -78,6 +78,26 @@ def get_latest_predictions(
         "ok": True,
         "count": len(items),
         "items": items,
+    }
+
+
+@router.post("/feedback/label")
+def submit_feedback_label(payload: FeedbackLabelRequest) -> dict[str, object]:
+    updated = update_training_label(
+        event_id=payload.event_id,
+        true_label=payload.true_label,
+        label_source=payload.label_source.strip() or "app_feedback",
+    )
+    if not updated:
+        return {
+            "ok": False,
+            "error": "event_id not found in training_samples",
+        }
+    return {
+        "ok": True,
+        "event_id": payload.event_id,
+        "true_label": payload.true_label,
+        "label_source": payload.label_source,
     }
 
 
