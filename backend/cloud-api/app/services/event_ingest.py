@@ -38,7 +38,6 @@ def persist_event_batch(events: list[EventRecord], ingest_mode: str) -> BatchIng
                         gy,
                         gz,
                         speed,
-                        address,
                         ingest_mode
                     )
                     VALUES (
@@ -55,7 +54,6 @@ def persist_event_batch(events: list[EventRecord], ingest_mode: str) -> BatchIng
                         %(gy)s,
                         %(gz)s,
                         %(speed)s,
-                        %(address)s,
                         %(ingest_mode)s
                     )
                     ON CONFLICT (event_id) DO NOTHING
@@ -75,7 +73,6 @@ def persist_event_batch(events: list[EventRecord], ingest_mode: str) -> BatchIng
                         "gy": event.gy,
                         "gz": event.gz,
                         "speed": event.speed,
-                        "address": event.address,
                         "ingest_mode": ingest_mode,
                     },
                 )

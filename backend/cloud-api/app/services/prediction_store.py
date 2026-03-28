@@ -62,8 +62,7 @@ def fetch_latest_predictions(*, limit: int, predicted_type: str | None = None) -
             s.source,
             s.event_ts,
             s.lat,
-            s.lng,
-            s.address
+            s.lng
         FROM predictions p
         JOIN sensor_events s ON s.event_id = p.event_id
         {where_sql}

@@ -62,7 +62,6 @@ def _create_sensor_events_table(conn: Connection) -> None:
                 gy DOUBLE PRECISION NOT NULL,
                 gz DOUBLE PRECISION NOT NULL,
                 speed DOUBLE PRECISION NULL,
-                address TEXT NULL,
                 ingest_mode TEXT NOT NULL CHECK (ingest_mode IN ('live', 'sync')),
                 received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
@@ -91,7 +90,6 @@ def _create_sensor_events_table(conn: Connection) -> None:
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS event_id TEXT;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS ingest_mode TEXT;")
         cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ DEFAULT NOW();")
-        cur.execute("ALTER TABLE sensor_events ADD COLUMN IF NOT EXISTS address TEXT;")
         cur.execute(
             """
             UPDATE sensor_events
