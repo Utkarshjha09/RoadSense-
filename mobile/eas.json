@@ -1,0 +1,50 @@
+{
+  "cli": {
+    "version": ">= 16.32.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://YOUR_PROJECT_REF.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "YOUR_SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "YOUR_GOOGLE_MAPS_API_KEY",
+        "EXPO_PUBLIC_OTP_SERVICE_URL": "https://YOUR_OTP_SERVICE_URL",
+        "EXPO_PUBLIC_CLOUD_API_URL": "https://YOUR_RENDER_CLOUD_API_URL"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://YOUR_PROJECT_REF.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "YOUR_SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "YOUR_GOOGLE_MAPS_API_KEY",
+        "EXPO_PUBLIC_OTP_SERVICE_URL": "https://YOUR_OTP_SERVICE_URL",
+        "EXPO_PUBLIC_CLOUD_API_URL": "https://YOUR_RENDER_CLOUD_API_URL"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://YOUR_PROJECT_REF.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "YOUR_SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "YOUR_GOOGLE_MAPS_API_KEY",
+        "EXPO_PUBLIC_CLOUD_API_URL": "https://YOUR_RENDER_CLOUD_API_URL"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
