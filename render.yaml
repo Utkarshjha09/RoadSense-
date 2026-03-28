@@ -1,11 +1,4 @@
 services:
-  - type: keyvalue
-    name: roadsense-redis
-    plan: free
-    region: oregon
-    ipAllowList: []
-    maxmemoryPolicy: noeviction
-
   - type: web
     name: roadsense-cloud-api
     runtime: python
@@ -17,11 +10,10 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      - key: DATABASE_URL
+        sync: false
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: roadsense-redis
-          property: connectionString
+        sync: false
       - key: API_SECRET
         generateValue: true
       - key: MODEL_PATH
@@ -43,11 +35,10 @@ services:
     startCommand: python -m app.workers.inference_worker
     autoDeploy: true
     envVars:
+      - key: DATABASE_URL
+        sync: false
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: roadsense-redis
-          property: connectionString
+        sync: false
       - key: MODEL_PATH
         value: /opt/render/project/src/backend/cloud-api/models/road_sense_model.tflite
       - key: ENVIRONMENT
