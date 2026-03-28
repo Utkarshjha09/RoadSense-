@@ -28,6 +28,7 @@ class EventRecord(BaseModel):
     gy: float
     gz: float
     speed: Annotated[float | None, Field(default=None, ge=0)] = None
+    address: Annotated[str | None, Field(default=None, max_length=512)] = None
 
     @field_validator("timestamp", mode="before")
     @classmethod
