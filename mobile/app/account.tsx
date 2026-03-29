@@ -26,7 +26,6 @@ export default function AccountScreen() {
     const [otpSending, setOtpSending] = useState(false)
     const [passwordSaving, setPasswordSaving] = useState(false)
     const [mustSetPassword, setMustSetPassword] = useState(false)
-    const [showPasswordPanel, setShowPasswordPanel] = useState(false)
     const canSendOtp =
         password.trim().length >= 8 &&
         confirmPassword.trim().length >= 8 &&
@@ -46,7 +45,6 @@ export default function AccountScreen() {
 
             setEmail(user.email || '')
             setMustSetPassword(requiresPasswordSetup(user))
-            setShowPasswordPanel(requiresPasswordSetup(user))
 
             const { data, error } = await supabase
                 .from('profiles')
@@ -148,7 +146,6 @@ export default function AccountScreen() {
             setOtpSent(false)
             setMustSetPassword(false)
             setPasswordMessage('Password updated successfully.')
-            setShowPasswordPanel(false)
         } catch (error: any) {
             setPasswordError(error.message || 'Failed to update password.')
         } finally {
@@ -202,85 +199,65 @@ export default function AccountScreen() {
                 </TouchableOpacity>
             </View>
 
-            {!showPasswordPanel ? (
-                <View style={styles.panel}>
-                    <Text style={styles.sectionTitle}>Password</Text>
-                    <Text style={styles.panelText}>
-                        {mustSetPassword
-                            ? 'Set a password so this account can use both Google and email/password login.'
-                            : 'Change your password whenever you need to.'}
-                    </Text>
-                    <TouchableOpacity style={styles.buttonSecondary} onPress={() => setShowPasswordPanel(true)}>
-                        <Text style={styles.buttonSecondaryText}>{mustSetPassword ? 'Set Password' : 'Change Password'}</Text>
+            <View style={styles.panel}>
+                <Text style={styles.sectionTitle}>Set Password</Text>
+                {passwordMessage ? <Text style={styles.successText}>{passwordMessage}</Text> : null}
+                {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+
+                <Text style={styles.label}>New Password</Text>
+                <TextInput
+                    style={styles.input}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Enter a strong password"
+                    placeholderTextColor={theme.colors.muted}
+                    secureTextEntry
+                />
+
+                <Text style={styles.label}>Confirm Password</Text>
+                <TextInput
+                    style={styles.input}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Re-enter your password"
+                    placeholderTextColor={theme.colors.muted}
+                    secureTextEntry
+                />
+
+                <Text style={styles.label}>OTP</Text>
+                <TextInput
+                    style={styles.input}
+                    value={otp}
+                    onChangeText={setOtp}
+                    placeholder="Enter OTP sent to your email"
+                    placeholderTextColor={theme.colors.muted}
+                    keyboardType="number-pad"
+                />
+
+                <View style={styles.actionRow}>
+                    <TouchableOpacity
+                        style={[styles.buttonSecondary, (otpSending || !canSendOtp) && styles.buttonDisabled]}
+                        onPress={() => void handleSendOtp()}
+                        disabled={otpSending || !canSendOtp}
+                    >
+                        <Text style={styles.buttonSecondaryText}>{otpSending ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.buttonPrimary, passwordSaving && styles.buttonDisabled]}
+                        onPress={() => void handleSetPassword()}
+                        disabled={passwordSaving}
+                    >
+                        <Text style={styles.buttonPrimaryText}>{passwordSaving ? 'Updating...' : 'Set Password'}</Text>
                     </TouchableOpacity>
                 </View>
-            ) : (
-                <View style={styles.panel}>
-                    <Text style={styles.sectionTitle}>{mustSetPassword ? 'Set Password' : 'Change Password'}</Text>
-                    {passwordMessage ? <Text style={styles.successText}>{passwordMessage}</Text> : null}
-                    {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
-                    <Text style={styles.label}>New Password</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={password}
-                        onChangeText={setPassword}
-                        placeholder="Enter a strong password"
-                        placeholderTextColor={theme.colors.muted}
-                        secureTextEntry
-                    />
-
-                    <Text style={styles.label}>Confirm Password</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        placeholder="Re-enter your password"
-                        placeholderTextColor={theme.colors.muted}
-                        secureTextEntry
-                    />
-
-                    <Text style={styles.label}>OTP</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={otp}
-                        onChangeText={setOtp}
-                        placeholder="Enter OTP sent to your email"
-                        placeholderTextColor={theme.colors.muted}
-                        keyboardType="number-pad"
-                    />
-
-                    <View style={styles.actionRow}>
-                        <TouchableOpacity
-                            style={[styles.buttonSecondary, (otpSending || !canSendOtp) && styles.buttonDisabled]}
-                            onPress={() => void handleSendOtp()}
-                            disabled={otpSending || !canSendOtp}
-                        >
-                            <Text style={styles.buttonSecondaryText}>{otpSending ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.buttonPrimary, passwordSaving && styles.buttonDisabled]}
-                            onPress={() => void handleSetPassword()}
-                            disabled={passwordSaving}
-                        >
-                            <Text style={styles.buttonPrimaryText}>{passwordSaving ? 'Updating...' : mustSetPassword ? 'Set Password' : 'Update Password'}</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {!canSendOtp ? (
-                        <Text style={styles.helperText}>
-                            Enter the new password and confirm password with at least 8 characters before sending OTP.
-                        </Text>
-                    ) : null}
-
-                    {!mustSetPassword ? (
-                        <TouchableOpacity style={styles.inlineButton} onPress={() => setShowPasswordPanel(false)}>
-                            <Text style={styles.inlineButtonText}>Cancel</Text>
-                        </TouchableOpacity>
-                    ) : null}
-                </View>
-            )}
+                {!canSendOtp ? (
+                    <Text style={styles.helperText}>
+                        Enter the new password and confirm password with at least 8 characters before sending OTP.
+                    </Text>
+                ) : null}
+            </View>
         </ScrollView>
     )
 }
@@ -291,10 +268,10 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.bg,
     },
     content: {
-        padding: 20,
+        paddingHorizontal: 20,
         paddingTop: 48,
-        gap: 16,
-        paddingBottom: 30,
+        paddingBottom: 28,
+        gap: 14,
     },
     center: {
         flex: 1,
@@ -307,8 +284,9 @@ const styles = StyleSheet.create({
         borderRadius: theme.radius.lg,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        padding: 20,
-        gap: 12,
+        paddingVertical: 20,
+        paddingHorizontal: 16,
+        gap: 10,
     },
     sectionTitle: {
         fontSize: 24,
@@ -328,8 +306,9 @@ const styles = StyleSheet.create({
     input: {
         backgroundColor: theme.colors.panelSoft,
         borderRadius: theme.radius.md,
-        padding: 13,
-        fontSize: 16,
+        paddingVertical: 14,
+        paddingHorizontal: 14,
+        fontSize: 15,
         color: theme.colors.text,
         borderWidth: 1,
         borderColor: theme.colors.border,
@@ -346,7 +325,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: theme.colors.border,
         borderRadius: theme.radius.md,
-        paddingVertical: 12,
+        paddingVertical: 14,
         alignItems: 'center',
         backgroundColor: theme.colors.panelSoft,
     },
@@ -356,7 +335,8 @@ const styles = StyleSheet.create({
     },
     roleChipText: {
         color: theme.colors.text,
-        fontWeight: '700',
+        fontWeight: '800',
+        fontSize: 15,
     },
     roleChipTextActive: {
         color: '#032137',
@@ -364,7 +344,7 @@ const styles = StyleSheet.create({
     buttonPrimary: {
         backgroundColor: theme.colors.accent,
         borderRadius: theme.radius.md,
-        paddingVertical: 14,
+        paddingVertical: 15,
         paddingHorizontal: 16,
         alignItems: 'center',
         justifyContent: 'center',
@@ -372,13 +352,13 @@ const styles = StyleSheet.create({
     },
     buttonPrimaryText: {
         color: '#032137',
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '800',
     },
     buttonSecondary: {
         backgroundColor: '#1f3c5b',
         borderRadius: theme.radius.md,
-        paddingVertical: 14,
+        paddingVertical: 15,
         paddingHorizontal: 16,
         alignItems: 'center',
         justifyContent: 'center',
@@ -388,8 +368,8 @@ const styles = StyleSheet.create({
     },
     buttonSecondaryText: {
         color: theme.colors.text,
-        fontSize: 15,
-        fontWeight: '700',
+        fontSize: 16,
+        fontWeight: '800',
     },
     buttonDisabled: {
         opacity: 0.6,
@@ -397,14 +377,6 @@ const styles = StyleSheet.create({
     actionRow: {
         flexDirection: 'row',
         gap: 10,
-    },
-    inlineButton: {
-        alignSelf: 'flex-end',
-        paddingVertical: 8,
-    },
-    inlineButtonText: {
-        color: theme.colors.accent,
-        fontWeight: '700',
     },
     successText: {
         color: '#9ceccb',
@@ -416,6 +388,11 @@ const styles = StyleSheet.create({
     },
     helperText: {
         color: theme.colors.muted,
+        fontSize: 12,
+        lineHeight: 18,
+    },
+    mandatoryHint: {
+        color: '#a9cce6',
         fontSize: 12,
         lineHeight: 18,
     },

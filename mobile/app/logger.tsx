@@ -32,6 +32,13 @@ type SessionSummary = {
     hasAnomaly: boolean
 }
 
+type PreviewSessionInfo = {
+    routeName: string
+    source: 'driving' | 'logger'
+    startIso: string
+    endIso: string
+}
+
 const ROUTE_NAME = 'Bhopal-Sehore'
 const SENSOR_INTERVAL_MS = 20
 const SESSION_GAP_MS = 2 * 60 * 1000
@@ -43,10 +50,15 @@ export default function DataLogger() {
     const [exportPreviewVisible, setExportPreviewVisible] = useState(false)
     const [exportRows, setExportRows] = useState<PreviewRow[]>([])
     const [exportFileUri, setExportFileUri] = useState<string | null>(null)
+    const [previewSessionInfo, setPreviewSessionInfo] = useState<PreviewSessionInfo | null>(null)
     const [exportPickerVisible, setExportPickerVisible] = useState(false)
     const [pendingCloudUploads, setPendingCloudUploads] = useState(0)
 
     const sessionSummaries = useMemo(() => buildSessionSummaries(collectedSamples), [collectedSamples])
+    const recentDrivingSessions = useMemo(
+        () => sessionSummaries.filter((session) => session.source === 'driving'),
+        [sessionSummaries]
+    )
 
     const loadSamples = useCallback(async () => {
         const rows = await getLoggedSamples()
@@ -207,6 +219,12 @@ export default function DataLogger() {
             const fileUri = await createCsvFile(session.samples)
             setExportRows(preview.slice(-120).reverse())
             setExportFileUri(fileUri)
+            setPreviewSessionInfo({
+                routeName: session.routeName,
+                source: session.source,
+                startIso: session.startIso,
+                endIso: session.endIso,
+            })
             setExportPreviewVisible(true)
         } catch (error) {
             console.error('Session preview error:', error)
@@ -249,12 +267,13 @@ export default function DataLogger() {
     }
 
     async function uploadRecentDrivingCsvToCloud() {
-        const drivingSamples = collectedSamples.filter((sample) => sample.source === 'driving')
-        if (drivingSamples.length === 0) {
+        const latestDrivingSession = recentDrivingSessions[recentDrivingSessions.length - 1]
+        if (!latestDrivingSession) {
             Alert.alert('No Driving Data', 'No recent driving samples found in Data Logger.')
             return
         }
 
+        const drivingSamples = latestDrivingSession.samples
         const anomalySamples = drivingSamples.filter((sample) => isAnomalyLabel(sample.label))
 
         try {
@@ -265,7 +284,7 @@ export default function DataLogger() {
             if (anomalySamples.length === 0) {
                 Alert.alert(
                     'No Anomaly Windows',
-                    `Full CSV created locally at:\n${fullFileUri}\n\nNo anomaly rows to upload.`,
+                    `Full CSV created locally for ${latestDrivingSession.routeName} (${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}).\n\nPath:\n${fullFileUri}\n\nNo anomaly rows to upload.`,
                 )
                 return
             }
@@ -279,12 +298,12 @@ export default function DataLogger() {
             if (sync.uploaded > 0 && queueCount === 0) {
                 Alert.alert(
                     'Cloud Upload Complete',
-                    `Created full + anomaly CSV locally.\nUploaded anomaly CSV rows: ${anomalySamples.length}\nBucket: roadsense-logs`,
+                    `Route: ${latestDrivingSession.routeName}\nSession: ${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}\n\nCreated full + anomaly CSV locally.\nUploaded anomaly CSV rows: ${anomalySamples.length}\nBucket: roadsense-logs`,
                 )
             } else {
                 Alert.alert(
                     'Queued For Auto Upload',
-                    `No internet or upload temporary failed.\nQueued anomaly CSV files: ${queueCount}\nIt will auto-upload when internet is available.`,
+                    `Route: ${latestDrivingSession.routeName}\nSession: ${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}\n\nNo internet or upload temporary failed.\nQueued anomaly CSV files: ${queueCount}\nIt will auto-upload when internet is available.`,
                 )
             }
         } catch (error) {
@@ -342,13 +361,13 @@ export default function DataLogger() {
 
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Recent Samples</Text>
-                {collectedSamples.length === 0 ? (
+                {recentDrivingSessions.length === 0 ? (
                     <View style={styles.emptyState}>
-                        <Text style={styles.emptyText}>No samples collected yet</Text>
+                        <Text style={styles.emptyText}>No driving route sessions yet</Text>
                     </View>
                 ) : (
                     <View style={styles.samplesList}>
-                        {sessionSummaries.slice(-8).reverse().map((session) => (
+                        {recentDrivingSessions.slice(-8).reverse().map((session) => (
                             <TouchableOpacity
                                 key={session.id}
                                 activeOpacity={0.9}
@@ -401,7 +420,14 @@ export default function DataLogger() {
                 <View style={styles.modalBackdrop}>
                     <View style={styles.modalCard}>
                         <Text style={styles.modalTitle}>CSV Preview</Text>
-                        <Text style={styles.modalSubTitle}>Route: {ROUTE_NAME}</Text>
+                        <Text style={styles.modalSubTitle}>
+                            Route: {previewSessionInfo?.routeName || ROUTE_NAME}
+                        </Text>
+                        {previewSessionInfo ? (
+                            <Text style={styles.modalSubTitle}>
+                                {formatSessionRange(previewSessionInfo.startIso, previewSessionInfo.endIso)} | {previewSessionInfo.source}
+                            </Text>
+                        ) : null}
 
                         <View style={styles.previewHeader}>
                             <Text style={[styles.previewHeaderCell, styles.previewColPoint]}>Lat,Lng</Text>
@@ -429,7 +455,13 @@ export default function DataLogger() {
                             <TouchableOpacity style={[styles.actionButton, styles.exportButton]} onPress={() => void openInExcelApp()}>
                                 <Text style={styles.actionButtonText}>Open in Excel App</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.actionButton, styles.clearButton]} onPress={() => setExportPreviewVisible(false)}>
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.clearButton]}
+                                onPress={() => {
+                                    setExportPreviewVisible(false)
+                                    setPreviewSessionInfo(null)
+                                }}
+                            >
                                 <Text style={styles.actionButtonText}>Close</Text>
                             </TouchableOpacity>
                         </View>

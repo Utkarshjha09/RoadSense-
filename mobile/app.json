@@ -3,12 +3,12 @@
     "name": "RoadSense",
     "slug": "roadsense",
     "version": "1.0.1",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "orientation": "default",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f172a"
     },
@@ -26,9 +26,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
       },
       "package": "com.roadsense.app",
       "permissions": [
@@ -50,12 +49,12 @@
       "blockedPermissions": [],
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+          "apiKey": ""
         }
       }
     },
     "web": {
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
@@ -72,7 +71,7 @@
       [
         "react-native-maps",
         {
-          "androidGoogleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+          "androidGoogleMapsApiKey": ""
         }
       ],
       [
@@ -94,9 +93,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "164e5d16-0ab4-40e9-99ca-6bc2b91c3616"
+        "projectId": "a36be76d-f4cd-4100-8e9d-5dee62fb41d9"
       }
     },
-    "owner": "utkarshjha07"
+    "owner": "nature21"
   }
 }

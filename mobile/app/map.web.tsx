@@ -22,7 +22,15 @@ import {
 import { BrandLoader } from '../components/brand-loader'
 
 const DEFAULT_COORDS = { latitude: 28.6139, longitude: 77.209 }
-const GOOGLE_MAPS_API_KEY = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim()
+function getMapsApiKey() {
+    const key = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim()
+    if (!key || /your_google_maps_api_key|placeholder/i.test(key)) {
+        return ''
+    }
+    return key
+}
+
+const GOOGLE_MAPS_API_KEY = getMapsApiKey()
 
 type RouteOption = {
     id: string
@@ -58,22 +66,40 @@ export default function MapWebScreen() {
         void initialize()
     }, [])
 
+    function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+        return Promise.race<T | null>([
+            promise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+        ])
+    }
+
     async function initialize() {
+        const start = Date.now()
         try {
-            const { status } = await Location.requestForegroundPermissionsAsync()
+            const permission = await withTimeout(Location.requestForegroundPermissionsAsync(), 2000)
+            const status = permission?.status
             if (status === 'granted') {
-                const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-                const currentCoords = {
-                    latitude: current.coords.latitude,
-                    longitude: current.coords.longitude,
+                const current = await withTimeout(
+                    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+                    2800
+                )
+                if (current) {
+                    const currentCoords = {
+                        latitude: current.coords.latitude,
+                        longitude: current.coords.longitude,
+                    }
+                    setCoords(currentCoords)
+                    setOriginInput(`${currentCoords.latitude.toFixed(6)}, ${currentCoords.longitude.toFixed(6)}`)
+                } else {
+                    setOriginInput(`${DEFAULT_COORDS.latitude.toFixed(6)}, ${DEFAULT_COORDS.longitude.toFixed(6)}`)
                 }
-                setCoords(currentCoords)
-                setOriginInput(`${currentCoords.latitude.toFixed(6)}, ${currentCoords.longitude.toFixed(6)}`)
             }
         } catch (error) {
             console.warn('Location not available on web:', error)
         } finally {
-            setLoading(false)
+            const elapsed = Date.now() - start
+            const remaining = Math.max(0, 700 - elapsed)
+            setTimeout(() => setLoading(false), remaining)
         }
     }
 

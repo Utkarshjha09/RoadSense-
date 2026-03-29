@@ -11,6 +11,7 @@ const {
   PORT = '4001',
   HOST = '0.0.0.0',
   FRONTEND_URL = 'http://localhost:3000',
+  FRONTEND_URLS = '',
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
   SMTP_HOST,
@@ -35,8 +36,19 @@ if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !OTP_FROM_EMAIL) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const app = express()
 
+const allowedOrigins = Array.from(
+  new Set(
+    [FRONTEND_URL, ...FRONTEND_URLS.split(',')]
+      .map((s) => s.trim())
+      .filter(Boolean)
+  )
+)
+
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin(origin, cb) {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    return cb(new Error(`CORS blocked for origin: ${origin}`))
+  },
   credentials: true,
 }))
 app.use(express.json())

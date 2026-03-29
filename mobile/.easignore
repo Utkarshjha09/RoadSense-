@@ -2,12 +2,18 @@
 android/
 ios/
 node_modules/
+**/node_modules/
 .gradle-local/
+.gradle-user-home/
+**/.gradle-user-home/
 
 # Local caches / temp
 .expo/
+**/.expo/
 .gradle/
+**/.gradle/
 build/
+**/build/
 dist/
 web-build/
 coverage/
@@ -30,6 +36,8 @@ build-view*.json
 
 # IDE / OS noise
 .idea/
+**/.idea/
 .vscode/
+**/.vscode/
 .DS_Store
 Thumbs.db

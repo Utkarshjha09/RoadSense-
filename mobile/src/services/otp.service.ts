@@ -1,6 +1,8 @@
 import { NativeModules } from 'react-native'
 
 const configuredOtpServiceUrl = (process.env.EXPO_PUBLIC_OTP_SERVICE_URL || '').trim()
+const FALLBACK_OTP_SERVICE_URL = 'https://roadsense-otp-service.onrender.com'
+const allowLocalOtpFallback = process.env.EXPO_PUBLIC_OTP_ALLOW_LOCAL === '1'
 
 type OtpPurpose = 'login' | 'password_change'
 
@@ -25,12 +27,18 @@ function getDevScriptHost() {
 function getServiceUrls() {
     const urls: string[] = []
     const primary = normalizeBaseUrl(configuredOtpServiceUrl)
-    if (primary) urls.push(primary)
+    if (primary) {
+        urls.push(primary)
+    } else {
+        urls.push(FALLBACK_OTP_SERVICE_URL)
+    }
 
-    const devHost = getDevScriptHost()
-    if (devHost) urls.push(`http://${devHost}:4001`)
+    if (__DEV__ && allowLocalOtpFallback) {
+        const devHost = getDevScriptHost()
+        if (devHost) urls.push(`http://${devHost}:4001`)
 
-    urls.push('http://10.0.2.2:4001')
+        urls.push('http://10.0.2.2:4001')
+    }
     return Array.from(new Set(urls))
 }
 

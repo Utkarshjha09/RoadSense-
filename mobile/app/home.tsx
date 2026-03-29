@@ -1,5 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native'
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import Svg, { Circle, Path, Rect } from 'react-native-svg'
 import { isSupabaseConfigured, supabase } from '../src/services/supabase.service'
 import { router } from 'expo-router'
 import { theme } from '../src/theme'
@@ -97,7 +99,7 @@ export default function HomeScreen() {
 
                 <TouchableOpacity style={styles.heroPanel} onPress={() => router.push('/driving')} activeOpacity={0.92}>
                     <View style={styles.heroPanelIconWrap}>
-                        <Text style={styles.heroPanelIcon}>AI</Text>
+                        <FeatureIcon kind="driving" size={30} color="#9cd9ff" />
                     </View>
                     <View style={styles.heroPanelBody}>
                         <View style={styles.heroPanelTop}>
@@ -121,28 +123,28 @@ export default function HomeScreen() {
                     title="Account Security"
                     subtitle="Profile, password, and identity controls"
                     badge="Secure"
-                    icon="ID"
+                    icon={<FeatureIcon kind="account" size={26} color="#9cd9ff" />}
                     onPress={() => router.push('/account')}
                 />
                 <CompactCard
                     title="View Map"
                     subtitle="Inspect reports and live route context"
                     badge="GPS"
-                    icon="MAP"
+                    icon={<FeatureIcon kind="map" size={26} color="#9cd9ff" />}
                     onPress={() => router.push('/map')}
                 />
                 <CompactCard
                     title="Data Logger"
                     subtitle="Capture and label model training windows"
                     badge="Dataset"
-                    icon="LOG"
+                    icon={<FeatureIcon kind="logger" size={26} color="#9cd9ff" />}
                     onPress={() => router.push('/logger')}
                 />
                 <CompactCard
                     title="Driving Console"
                     subtitle="Launch live pothole and bump detection"
                     badge="Realtime"
-                    icon="DRV"
+                    icon={<FeatureIcon kind="driving" size={26} color="#9cd9ff" />}
                     onPress={() => router.push('/driving')}
                 />
             </View>
@@ -264,13 +266,13 @@ function CompactCard({
     title: string
     subtitle: string
     badge: string
-    icon: string
+    icon: ReactNode
     onPress: () => void
 }) {
     return (
         <TouchableOpacity style={styles.quickCard} onPress={onPress} activeOpacity={0.92}>
             <View style={styles.quickCardIcon}>
-                <Text style={styles.quickCardIconText}>{icon}</Text>
+                {icon}
             </View>
             <View style={styles.quickCardBody}>
                 <View style={styles.menuTopRow}>
@@ -282,6 +284,57 @@ function CompactCard({
                 <Text style={styles.menuSubtitle}>{subtitle}</Text>
             </View>
         </TouchableOpacity>
+    )
+}
+
+function FeatureIcon({
+    kind,
+    size,
+    color,
+}: {
+    kind: 'account' | 'map' | 'logger' | 'driving'
+    size: number
+    color: string
+}) {
+    const stroke = color
+    const strokeWidth = 1.9
+
+    if (kind === 'account') {
+        return (
+            <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+                <Circle cx="12" cy="8.2" r="3.2" stroke={stroke} strokeWidth={strokeWidth} />
+                <Path d="M5 18.2c1.5-3.2 4-4.8 7-4.8s5.5 1.6 7 4.8" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
+                <Rect x="2.5" y="2.5" width="19" height="19" rx="6" stroke={stroke} strokeWidth={1.4} opacity={0.55} />
+            </Svg>
+        )
+    }
+
+    if (kind === 'map') {
+        return (
+            <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+                <Path d="M12 20c4-4.4 6-7.1 6-9.7A6 6 0 1 0 6 10.3C6 12.9 8 15.6 12 20Z" stroke={stroke} strokeWidth={strokeWidth} />
+                <Circle cx="12" cy="10.1" r="1.8" fill={stroke} />
+            </Svg>
+        )
+    }
+
+    if (kind === 'logger') {
+        return (
+            <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+                <Rect x="4" y="4" width="16" height="16" rx="3.2" stroke={stroke} strokeWidth={strokeWidth} />
+                <Path d="M8 15.5V13m4 2.5V9m4 6.5v-4" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
+                <Circle cx="8" cy="10" r="1" fill={stroke} />
+            </Svg>
+        )
+    }
+
+    return (
+        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+            <Path d="M4 15.4 9.8 9.6l3.2 3.2L19.5 6.3" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M15.8 6.3h3.7V10" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+            <Circle cx="9.8" cy="9.6" r="1.3" fill={stroke} />
+            <Circle cx="13" cy="12.8" r="1.3" fill={stroke} />
+        </Svg>
     )
 }
 
@@ -407,12 +460,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#2d5d97',
     },
-    heroPanelIcon: {
-        color: '#9cd9ff',
-        fontSize: 22,
-        fontWeight: '900',
-        letterSpacing: 1,
-    },
     heroPanelBody: {
         flex: 1,
     },
@@ -485,12 +532,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderWidth: 1,
         borderColor: '#2b5279',
-    },
-    quickCardIconText: {
-        color: '#9cd9ff',
-        fontSize: 14,
-        fontWeight: '900',
-        letterSpacing: 0.8,
     },
     quickCardBody: {
         flex: 1,

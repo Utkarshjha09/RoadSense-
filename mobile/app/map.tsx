@@ -23,7 +23,15 @@ import {
 import { BrandLoader } from '../components/brand-loader'
 
 const DEFAULT_COORDS = { latitude: 28.6139, longitude: 77.209 }
-const GOOGLE_MAPS_API_KEY = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim()
+function getMapsApiKey() {
+    const key = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim()
+    if (!key || /your_google_maps_api_key|placeholder/i.test(key)) {
+        return ''
+    }
+    return key
+}
+
+const GOOGLE_MAPS_API_KEY = getMapsApiKey()
 
 type RouteOption = {
     id: string
@@ -45,6 +53,7 @@ export default function MapScreen() {
     const [routeAnomalies, setRouteAnomalies] = useState<RouteAnomaly[]>([])
 
     const mapRef = useRef<MapView>(null)
+    const locationWatchRef = useRef<Location.LocationSubscription | null>(null)
 
     const selectedRoute = useMemo(
         () => routeOptions.find((route) => route.id === selectedRouteId) || null,
@@ -60,21 +69,41 @@ export default function MapScreen() {
 
     useEffect(() => {
         void initialize()
+        return () => {
+            locationWatchRef.current?.remove()
+            locationWatchRef.current = null
+        }
     }, [])
 
-    async function initialize() {
-        try {
-            const { status } = await Location.requestForegroundPermissionsAsync()
-            if (status === 'granted') {
-                const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-                const currentCoords = {
-                    latitude: current.coords.latitude,
-                    longitude: current.coords.longitude,
-                }
-                setCoords(currentCoords)
-                setOriginInput(`${currentCoords.latitude.toFixed(6)}, ${currentCoords.longitude.toFixed(6)}`)
+    function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+        return Promise.race<T | null>([
+            promise,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+        ])
+    }
 
-                await Location.watchPositionAsync(
+    async function initialize() {
+        const start = Date.now()
+        try {
+            const permission = await withTimeout(Location.requestForegroundPermissionsAsync(), 2500)
+            const status = permission?.status
+            if (status === 'granted') {
+                const current = await withTimeout(
+                    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+                    3000
+                )
+                if (current) {
+                    const currentCoords = {
+                        latitude: current.coords.latitude,
+                        longitude: current.coords.longitude,
+                    }
+                    setCoords(currentCoords)
+                    setOriginInput(`${currentCoords.latitude.toFixed(6)}, ${currentCoords.longitude.toFixed(6)}`)
+                } else {
+                    setOriginInput(`${DEFAULT_COORDS.latitude.toFixed(6)}, ${DEFAULT_COORDS.longitude.toFixed(6)}`)
+                }
+
+                locationWatchRef.current = await Location.watchPositionAsync(
                     {
                         accuracy: Location.Accuracy.Balanced,
                         timeInterval: 4000,
@@ -91,7 +120,9 @@ export default function MapScreen() {
         } catch (error) {
             console.warn('Could not get current location for route planner:', error)
         } finally {
-            setLoading(false)
+            const elapsed = Date.now() - start
+            const remaining = Math.max(0, 900 - elapsed)
+            setTimeout(() => setLoading(false), remaining)
         }
     }
 

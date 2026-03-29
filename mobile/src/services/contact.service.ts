@@ -1,6 +1,7 @@
 import { NativeModules } from 'react-native'
 
 const configuredContactServiceUrl = (process.env.EXPO_PUBLIC_OTP_SERVICE_URL || '').trim()
+const FALLBACK_CONTACT_SERVICE_URL = 'https://roadsense-otp-service.onrender.com'
 
 export const isContactConfigured = Boolean(configuredContactServiceUrl)
 
@@ -34,15 +35,19 @@ function buildCandidateServiceUrls() {
     const primary = normalizeBaseUrl(configuredContactServiceUrl)
     if (primary) {
         candidates.push(primary)
+    } else {
+        candidates.push(FALLBACK_CONTACT_SERVICE_URL)
     }
 
-    const devHost = getDevScriptHost()
-    if (devHost) {
-        candidates.push(`http://${devHost}:4001`)
-    }
+    if (__DEV__) {
+        const devHost = getDevScriptHost()
+        if (devHost) {
+            candidates.push(`http://${devHost}:4001`)
+        }
 
-    // Android emulator local mapping fallback.
-    candidates.push('http://10.0.2.2:4001')
+        // Android emulator local mapping fallback.
+        candidates.push('http://10.0.2.2:4001')
+    }
 
     return Array.from(new Set(candidates))
 }

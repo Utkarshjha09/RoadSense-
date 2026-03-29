@@ -9,7 +9,19 @@ const fallbackUrl = 'https://placeholder.supabase.co'
 const fallbackAnonKey = 'placeholder-anon-key'
 const OFFLINE_ANOMALY_UPLOAD_KEY = 'roadsense_offline_anomaly_csv_uploads_v1'
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+function hasPlaceholderConfig(value: string) {
+    const normalized = value.toLowerCase()
+    return (
+        normalized.includes('your_project_ref') ||
+        normalized.includes('your_supabase_anon_key') ||
+        normalized.includes('placeholder')
+    )
+}
+
+const hasValidSupabaseUrl = Boolean(supabaseUrl) && !hasPlaceholderConfig(supabaseUrl)
+const hasValidSupabaseAnonKey = Boolean(supabaseAnonKey) && !hasPlaceholderConfig(supabaseAnonKey)
+
+export const isSupabaseConfigured = hasValidSupabaseUrl && hasValidSupabaseAnonKey
 
 export interface PendingAnomalyCsvUpload {
     fileUri: string

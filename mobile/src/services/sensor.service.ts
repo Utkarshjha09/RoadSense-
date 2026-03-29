@@ -71,6 +71,8 @@ export class SensorService {
     private cloudFlushInProgress = false;
     private currentDeviceId: string | null = null;
     private lastHandledPredictionEventId: string | null = null;
+    private lastQueueWarningAt = 0;
+    private lastQueueWarningMessage = '';
 
     constructor(
         onPrediction?: (prediction: PredictionResult) => void,
@@ -229,7 +231,14 @@ export class SensorService {
             this.cloudBuffer = [];
             const result = await submitLiveEvents(batch);
             if (result.queueError) {
-                console.warn(`Cloud queue warning: ${result.queueError}`);
+                const now = Date.now();
+                const warningChanged = result.queueError !== this.lastQueueWarningMessage;
+                const cooldownElapsed = now - this.lastQueueWarningAt > 30000;
+                if (warningChanged || cooldownElapsed) {
+                    console.warn(`Cloud queue warning: ${result.queueError}`);
+                    this.lastQueueWarningAt = now;
+                    this.lastQueueWarningMessage = result.queueError;
+                }
             }
             if (result.success) {
                 await flushOfflineEvents();

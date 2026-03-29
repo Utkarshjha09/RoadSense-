@@ -5,6 +5,7 @@ import MapView, { AnimatedRegion, Marker, Polyline } from 'react-native-maps'
 import * as Location from 'expo-location'
 import { CombinedReading, SensorService, SensorSourceType, SensorStatus } from '../src/services/sensor.service'
 import type { PredictionResult } from '../src/services/tflite.service'
+import { appendLoggedSample } from '../src/services/data-logger.service'
 import { getAnomaliesInViewport, uploadAnomaly } from '../src/services/supabase.service'
 import { theme } from '../src/theme'
 import {
@@ -18,7 +19,15 @@ import {
 } from '../src/utils/routeQuality'
 
 const DEFAULT_ESP32_URL = 'ws://192.168.4.1:81'
-const GOOGLE_MAPS_API_KEY = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim()
+function getMapsApiKey() {
+    const key = (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '').trim()
+    if (!key || /your_google_maps_api_key|placeholder/i.test(key)) {
+        return ''
+    }
+    return key
+}
+
+const GOOGLE_MAPS_API_KEY = getMapsApiKey()
 
 type RouteStep = {
     instruction: string
@@ -157,6 +166,42 @@ function getManeuverVisual(instruction: string | null) {
     return { icon: 'navigation' as const, label: 'Follow route' }
 }
 
+function getPredictionBadgeCopy(prediction: PredictionResult | null, isActive: boolean) {
+    if (!isActive) {
+        return null
+    }
+
+    if (!prediction) {
+        return {
+            text: 'Waiting for model output',
+            detail: 'FastAPI model is warming up',
+            backgroundColor: '#1d4ed8',
+        }
+    }
+
+    if (prediction.classId === 1) {
+        return {
+            text: 'Pothole Detected',
+            detail: `FastAPI confidence ${prediction.confidence.toFixed(1)}%`,
+            backgroundColor: '#dc2626',
+        }
+    }
+
+    if (prediction.classId === 2) {
+        return {
+            text: 'Speed Bump Detected',
+            detail: `FastAPI confidence ${prediction.confidence.toFixed(1)}%`,
+            backgroundColor: '#d97706',
+        }
+    }
+
+    return {
+        text: 'Road Smooth',
+        detail: `FastAPI confidence ${prediction.confidence.toFixed(1)}%`,
+        backgroundColor: '#10b981',
+    }
+}
+
 export default function DrivingScreen() {
     const [isActive, setIsActive] = useState(false)
     const [modelReady, setModelReady] = useState(false)
@@ -202,6 +247,11 @@ export default function DrivingScreen() {
     const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null)
     const headingSubscriptionRef = useRef<Location.LocationSubscription | null>(null)
     const lastLocationButtonTapRef = useRef(0)
+    const readingBufferRef = useRef<number[][]>([])
+    const isActiveRef = useRef(false)
+    const currentPredictionRef = useRef<PredictionResult | null>(null)
+    const lastPredictionAtRef = useRef(0)
+    const lastFallbackLogAtRef = useRef(0)
     const animatedLocationRef = useRef(
         new AnimatedRegion({
             latitude: 28.6139,
@@ -374,6 +424,7 @@ export default function DrivingScreen() {
         return selectedRoute.steps[currentIndex + 1]
     })()
     const roadConditionCopy = getRoadConditionCopy(currentPrediction)
+    const predictionBadgeCopy = getPredictionBadgeCopy(currentPrediction, isActive)
     const currentRoadDetail = (() => {
         if (!isActive) {
             return 'Detection paused. Start sensor detection to refresh road conditions.'
@@ -599,8 +650,14 @@ export default function DrivingScreen() {
     }, [initializeLocationTracking])
 
     useEffect(() => {
+        isActiveRef.current = isActive
+    }, [isActive])
+
+    useEffect(() => {
         const onPrediction = (prediction: PredictionResult) => {
             setCurrentPrediction(prediction)
+            currentPredictionRef.current = prediction
+            lastPredictionAtRef.current = Date.now()
 
             setStats((prev) => ({
                 smooth: prev.smooth + (prediction.classId === 0 ? 1 : 0),
@@ -608,6 +665,26 @@ export default function DrivingScreen() {
                 speedBumps: prev.speedBumps + (prediction.classId === 2 ? 1 : 0),
                 totalPredictions: prev.totalPredictions + 1,
             }))
+
+            const label: 'POTHOLE' | 'SPEED_BUMP' | 'NORMAL' =
+                prediction.classId === 1
+                    ? 'POTHOLE'
+                    : prediction.classId === 2
+                      ? 'SPEED_BUMP'
+                      : 'NORMAL'
+            const bufferedWindow = readingBufferRef.current.slice(-100)
+            const drivingSample = {
+                id: `drv-${Date.now()}-${Math.round(Math.random() * 100000)}`,
+                timestamp: new Date().toISOString(),
+                label,
+                source: 'driving' as const,
+                latitude: prediction.latitude,
+                longitude: prediction.longitude,
+                confidence: prediction.confidence,
+                data: bufferedWindow,
+            }
+
+            void appendLoggedSample(drivingSample)
 
             // Do not force map camera on each prediction; it breaks manual control and logger flow.
             // Navigation camera updates are handled in the navigation effect.
@@ -646,6 +723,33 @@ export default function DrivingScreen() {
                 gy: reading.gy,
                 gz: reading.gz,
             })
+
+            const row = [reading.ax, reading.ay, reading.az, reading.gx, reading.gy, reading.gz]
+            const nextBuffer = [...readingBufferRef.current, row]
+            readingBufferRef.current = nextBuffer.slice(-120)
+
+            const now = Date.now()
+            const shouldWriteFallbackSample =
+                isActiveRef.current &&
+                now - lastPredictionAtRef.current > 8000 &&
+                now - lastFallbackLogAtRef.current > 3000
+
+            if (shouldWriteFallbackSample) {
+                lastFallbackLogAtRef.current = now
+                const fallbackWindow = readingBufferRef.current.slice(-20)
+                const fallbackPrediction = currentPredictionRef.current
+                const fallbackSample = {
+                    id: `drv-fallback-${now}-${Math.round(Math.random() * 100000)}`,
+                    timestamp: new Date(now).toISOString(),
+                    label: 'NORMAL' as const,
+                    source: 'driving' as const,
+                    latitude: reading.latitude,
+                    longitude: reading.longitude,
+                    confidence: fallbackPrediction?.confidence,
+                    data: fallbackWindow,
+                }
+                void appendLoggedSample(fallbackSample)
+            }
         }
 
         const onStatus = (status: SensorStatus) => {
@@ -1075,29 +1179,6 @@ export default function DrivingScreen() {
                                 </Text>
                             </View>
 
-                            {currentPrediction && isActive && (
-                                <View
-                                    style={[
-                                        styles.predictionCard,
-                                        {
-                                            backgroundColor:
-                                                currentPrediction.classId === 0
-                                                    ? '#10b981'
-                                                    : currentPrediction.classId === 1
-                                                      ? '#ef4444'
-                                                      : '#f59e0b',
-                                        },
-                                    ]}
-                                >
-                                    <Text style={styles.predictionText}>
-                                        {currentPrediction.className === 'Smooth'
-                                            ? 'Road Smooth'
-                                            : currentPrediction.className === 'Pothole'
-                                              ? 'POTHOLE DETECTED'
-                                              : 'SPEED BUMP DETECTED'}
-                                    </Text>
-                                </View>
-                            )}
                         </>
                     ) : (
                         <>
@@ -1142,32 +1223,25 @@ export default function DrivingScreen() {
                                 <Text style={styles.infoText}>{sensorData.ax.toFixed(2)} / {sensorData.ay.toFixed(2)} / {sensorData.az.toFixed(2)}</Text>
                             </View>
 
-                            {currentPrediction && isActive && (
-                                <View
-                                    style={[
-                                        styles.predictionCard,
-                                        {
-                                            backgroundColor:
-                                                currentPrediction.classId === 0
-                                                    ? '#10b981'
-                                                    : currentPrediction.classId === 1
-                                                      ? '#ef4444'
-                                                      : '#f59e0b',
-                                        },
-                                    ]}
-                                >
-                                    <Text style={styles.predictionText}>
-                                        {currentPrediction.className === 'Smooth'
-                                            ? 'Road Smooth'
-                                            : currentPrediction.className === 'Pothole'
-                                              ? 'POTHOLE DETECTED'
-                                              : 'SPEED BUMP DETECTED'}
-                                    </Text>
-                                </View>
-                            )}
                         </>
                     )}
                 </View>
+
+                {predictionBadgeCopy && (
+                    <View
+                        pointerEvents="none"
+                        style={[
+                            styles.floatingPredictionChip,
+                            {
+                                bottom: isNavigating ? 84 : routePanelsVisible ? 404 : 176,
+                                backgroundColor: predictionBadgeCopy.backgroundColor,
+                            },
+                        ]}
+                    >
+                        <Text style={styles.floatingPredictionText}>{predictionBadgeCopy.text}</Text>
+                        <Text style={styles.floatingPredictionDetail}>{predictionBadgeCopy.detail}</Text>
+                    </View>
+                )}
 
                 <TouchableOpacity
                     style={[styles.locationButton, { bottom: isNavigating ? 28 : routePanelsVisible ? 438 : 190 }]}
@@ -1353,8 +1427,23 @@ const styles = StyleSheet.create({
     routeButtonText: { color: '#032137', fontWeight: '800' },
     routeErrorText: { color: '#ffaaa1', fontSize: 12 },
     helperText: { color: theme.colors.muted, fontSize: 11, marginTop: 8, lineHeight: 16 },
-    predictionCard: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, alignItems: 'center', marginTop: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.26)', alignSelf: 'center', minWidth: 210 },
-    predictionText: { fontSize: 14, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
+    floatingPredictionChip: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        alignSelf: 'center',
+        width: 220,
+        borderRadius: 14,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.28)',
+        zIndex: 25,
+    },
+    floatingPredictionText: { fontSize: 15, fontWeight: '800', color: '#ffffff', letterSpacing: 0.2 },
+    floatingPredictionDetail: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.92)', marginTop: 3 },
     liveHeadingMarker: {
         width: 38,
         height: 38,
