@@ -37,6 +37,7 @@ export default function MapView() {
     const [anomalies, setAnomalies] = useState<Anomaly[]>([])
     const [loadingData, setLoadingData] = useState(true)
     const [selectedAnomaly, setSelectedAnomaly] = useState<Anomaly | null>(null)
+    const [placedMarker, setPlacedMarker] = useState<{ lat: number, lng: number } | null>(null)
     const [currentLocation, setCurrentLocation] = useState<{ lat: number, lng: number } | null>(null)
     const [locationError, setLocationError] = useState<string | null>(null)
     const [mapRef, setMapRef] = useState<google.maps.Map | null>(null)
@@ -81,18 +82,6 @@ export default function MapView() {
         }
         return new Set(routeStats.matchedAnomalies.map((item) => item.id))
     }, [routeStats])
-
-    const mapCenter = useMemo(() => {
-        if (currentLocation) {
-            return currentLocation
-        }
-
-        if (anomalies.length > 0) {
-            return { lat: anomalies[0].latitude, lng: anomalies[0].longitude }
-        }
-
-        return defaultCenter
-    }, [anomalies, currentLocation])
 
     const loadAnomalies = useCallback(async () => {
         try {
@@ -265,6 +254,17 @@ export default function MapView() {
         setRouteError(null)
     }, [])
 
+    const handleMapClick = useCallback((event: google.maps.MapMouseEvent) => {
+        if (!event.latLng) {
+            return
+        }
+
+        setPlacedMarker({
+            lat: event.latLng.lat(),
+            lng: event.latLng.lng(),
+        })
+    }, [])
+
     const goToCurrentLocation = useCallback(() => {
         if (!navigator.geolocation || !mapRef) {
             return
@@ -386,10 +386,11 @@ export default function MapView() {
             ) : (
                 <GoogleMap
                     mapContainerStyle={mapContainerStyle}
-                    center={mapCenter}
-                    zoom={12}
+                    defaultCenter={defaultCenter}
+                    defaultZoom={12}
                     options={mapOptions}
                     onLoad={onMapLoad}
+                    onClick={handleMapClick}
                 >
                     {directions && (
                         <DirectionsRenderer
@@ -428,6 +429,14 @@ export default function MapView() {
 
                     {currentLocation && (
                         <Marker position={currentLocation} title="Your current location" />
+                    )}
+
+                    {placedMarker && (
+                        <Marker
+                            position={placedMarker}
+                            title="Placed marker"
+                            onClick={() => setPlacedMarker(null)}
+                        />
                     )}
 
                     {selectedAnomaly && (
