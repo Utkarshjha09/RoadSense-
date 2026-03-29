@@ -3,7 +3,7 @@
     "name": "RoadSense",
     "slug": "roadsense",
     "version": "1.0.1",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",

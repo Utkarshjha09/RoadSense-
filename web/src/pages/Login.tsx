@@ -21,7 +21,6 @@ export default function Login() {
         signIn,
         signInWithGoogle,
         sendPasswordResetEmail,
-        bypassAuth,
         requiresLoginOtpVerification,
         markLoginOtpVerified,
     } = useAuth()
@@ -268,24 +267,6 @@ export default function Login() {
                                 {loading ? 'Signing in...' : 'Sign In'}
                             </button>
                         </form>
-
-                        <div className="mt-6 pt-6 border-t border-[var(--rs-border)]">
-                            <button
-                                onClick={() => {
-                                    bypassAuth()
-                                    setTimeout(() => {
-                                        navigate('/')
-                                    }, 100)
-                                }}
-                                type="button"
-                                className="w-full rs-button-secondary py-2.5 px-4 transition-colors text-sm"
-                            >
-                                Quick Login (Bypass Auth)
-                            </button>
-                            <p className="text-center text-[var(--rs-muted)] text-xs mt-2">
-                                Testing mode: skips Supabase
-                            </p>
-                        </div>
                     </>
                 )}
 

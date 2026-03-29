@@ -218,3 +218,14 @@ h6 {
     transform: scaleY(1);
   }
 }
+
+@media (max-width: 768px) {
+  .rs-grid-bg {
+    background-size: 24px 24px;
+  }
+
+  .rs-panel,
+  .rs-panel-soft {
+    border-radius: 12px;
+  }
+}

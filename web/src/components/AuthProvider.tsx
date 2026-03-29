@@ -17,7 +17,6 @@ interface AuthContextType {
     markLoginOtpVerified: () => void
     signOut: () => Promise<void>
     refreshProfile: () => Promise<void>
-    bypassAuth: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -197,34 +196,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await loadProfile(user.id)
     }
 
-    function bypassAuth() {
-        const now = new Date().toISOString()
-        window.sessionStorage.setItem(LOGIN_METHOD_KEY, 'bypass')
-        window.sessionStorage.setItem(LOGIN_OTP_VERIFIED_KEY, 'true')
-        setUser({
-            id: 'test-admin-id',
-            email: 'admin@roadsense.com',
-            aud: 'authenticated',
-            role: 'authenticated',
-            app_metadata: {},
-            user_metadata: {
-                password_setup_completed: true,
-            },
-            created_at: now,
-        } as User)
-        setProfile({
-            id: 'test-admin-id',
-            email: 'admin@roadsense.com',
-            full_name: 'Test Admin',
-            role: 'admin',
-            score: 0,
-            created_at: now,
-            updated_at: now,
-        })
-        setIsAdmin(true)
-        setLoading(false)
-    }
-
     return (
         <AuthContext.Provider
             value={{
@@ -242,7 +213,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 markLoginOtpVerified,
                 signOut,
                 refreshProfile,
-                bypassAuth,
             }}
         >
             {children}
