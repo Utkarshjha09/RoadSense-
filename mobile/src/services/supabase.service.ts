@@ -4,10 +4,18 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim()
 const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim()
+const supabaseLogBucket = (process.env.EXPO_PUBLIC_SUPABASE_LOG_BUCKET || 'roadsense-logs').trim()
 const fallbackUrl = 'https://placeholder.supabase.co'
 const fallbackAnonKey = 'placeholder-anon-key'
+const OFFLINE_ANOMALY_UPLOAD_KEY = 'roadsense_offline_anomaly_csv_uploads_v1'
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+
+export interface PendingAnomalyCsvUpload {
+    fileUri: string
+    fileName: string
+    createdAt: string
+}
 
 if (!isSupabaseConfigured) {
     console.warn('Supabase credentials not found. Running in guest mode.')
@@ -122,4 +130,102 @@ export async function uploadSensorEvent(data: {
         console.error('Sensor event upload error:', error)
         return { success: false, error }
     }
+}
+
+export async function uploadAnomalyCsvFile(fileUri: string, fileName: string) {
+    if (!isSupabaseConfigured) {
+        return { success: false, error: new Error('Supabase not configured') }
+    }
+
+    try {
+        const { data: authData, error: authError } = await supabase.auth.getUser()
+        if (authError) throw authError
+
+        const userId = authData.user?.id || 'anonymous'
+        const day = new Date().toISOString().slice(0, 10)
+        const path = `driving-csv/${userId}/${day}/${fileName}`
+
+        const fileResponse = await fetch(fileUri)
+        const blob = await fileResponse.blob()
+
+        const { data, error } = await supabase.storage
+            .from(supabaseLogBucket)
+            .upload(path, blob, {
+                contentType: 'text/csv',
+                upsert: true,
+            })
+
+        if (error) throw error
+
+        const { data: publicData } = supabase.storage
+            .from(supabaseLogBucket)
+            .getPublicUrl(path)
+
+        return {
+            success: true,
+            path: data?.path || path,
+            publicUrl: publicData?.publicUrl || null,
+            bucket: supabaseLogBucket,
+        }
+    } catch (error) {
+        console.error('Anomaly CSV upload error:', error)
+        return { success: false, error }
+    }
+}
+
+async function readPendingAnomalyCsvUploads(): Promise<PendingAnomalyCsvUpload[]> {
+    try {
+        const raw = await AsyncStorage.getItem(OFFLINE_ANOMALY_UPLOAD_KEY)
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? (parsed as PendingAnomalyCsvUpload[]) : []
+    } catch {
+        return []
+    }
+}
+
+async function writePendingAnomalyCsvUploads(items: PendingAnomalyCsvUpload[]) {
+    await AsyncStorage.setItem(OFFLINE_ANOMALY_UPLOAD_KEY, JSON.stringify(items.slice(-500)))
+}
+
+export async function enqueueAnomalyCsvUpload(fileUri: string, fileName: string) {
+    const current = await readPendingAnomalyCsvUploads()
+    current.push({
+        fileUri,
+        fileName,
+        createdAt: new Date().toISOString(),
+    })
+    await writePendingAnomalyCsvUploads(current)
+}
+
+export async function getPendingAnomalyCsvUploadCount() {
+    const queue = await readPendingAnomalyCsvUploads()
+    return queue.length
+}
+
+export async function flushPendingAnomalyCsvUploads() {
+    const queue = await readPendingAnomalyCsvUploads()
+    if (queue.length === 0) {
+        return { uploaded: 0, remaining: 0, failed: false }
+    }
+
+    let uploaded = 0
+    const remaining: PendingAnomalyCsvUpload[] = []
+    let failed = false
+
+    for (let i = 0; i < queue.length; i += 1) {
+        const item = queue[i]
+        const uploadedItem = await uploadAnomalyCsvFile(item.fileUri, item.fileName)
+        if (uploadedItem.success) {
+            uploaded += 1
+            continue
+        }
+
+        failed = true
+        remaining.push(item, ...queue.slice(i + 1))
+        break
+    }
+
+    await writePendingAnomalyCsvUploads(remaining)
+    return { uploaded, remaining: remaining.length, failed }
 }

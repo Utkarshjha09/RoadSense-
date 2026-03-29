@@ -5,6 +5,11 @@ import * as FileSystem from 'expo-file-system/legacy'
 import * as Sharing from 'expo-sharing'
 import { theme } from '../src/theme'
 import { appendLoggedSample, clearLoggedSamples, getLoggedSamples, LoggedSample } from '../src/services/data-logger.service'
+import {
+    enqueueAnomalyCsvUpload,
+    flushPendingAnomalyCsvUploads,
+    getPendingAnomalyCsvUploadCount,
+} from '../src/services/supabase.service'
 
 type SampleLabel = 'POTHOLE' | 'SPEED_BUMP' | 'NORMAL'
 type PreviewRow = {
@@ -39,6 +44,7 @@ export default function DataLogger() {
     const [exportRows, setExportRows] = useState<PreviewRow[]>([])
     const [exportFileUri, setExportFileUri] = useState<string | null>(null)
     const [exportPickerVisible, setExportPickerVisible] = useState(false)
+    const [pendingCloudUploads, setPendingCloudUploads] = useState(0)
 
     const sessionSummaries = useMemo(() => buildSessionSummaries(collectedSamples), [collectedSamples])
 
@@ -55,6 +61,28 @@ export default function DataLogger() {
 
         return () => clearInterval(interval)
     }, [loadSamples])
+
+    const syncPendingCloudUploads = useCallback(async () => {
+        const result = await flushPendingAnomalyCsvUploads()
+        if (result.uploaded > 0 || result.remaining >= 0) {
+            const count = await getPendingAnomalyCsvUploadCount()
+            setPendingCloudUploads(count)
+        }
+    }, [])
+
+    useEffect(() => {
+        void (async () => {
+            const count = await getPendingAnomalyCsvUploadCount()
+            setPendingCloudUploads(count)
+            await syncPendingCloudUploads()
+        })()
+
+        const interval = setInterval(() => {
+            void syncPendingCloudUploads()
+        }, 20000)
+
+        return () => clearInterval(interval)
+    }, [syncPendingCloudUploads])
 
     async function handleLabelWindow(label: SampleLabel) {
         if (!currentWindow) {
@@ -76,7 +104,7 @@ export default function DataLogger() {
         setTimeout(() => setCurrentLabel(null), 1000)
     }
 
-    async function createCsvFile(samples: LoggedSample[]) {
+    async function createCsvFile(samples: LoggedSample[], prefix = 'roadsense_data') {
         let csv = 'route_name,window_start,window_end,label,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,latitude,longitude,confidence,source\n'
 
         samples.forEach((sample) => {
@@ -92,7 +120,7 @@ export default function DataLogger() {
             })
         })
 
-        const fileName = `roadsense_data_${Date.now()}.csv`
+        const fileName = `${prefix}_${Date.now()}_${Math.floor(Math.random() * 100000)}.csv`
         const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || ''
         const fileUri = `${baseDir}${fileName}`
         await FileSystem.writeAsStringAsync(fileUri, csv)
@@ -216,6 +244,55 @@ export default function DataLogger() {
         await exportSamplesAsCsv(collectedSamples, 'Export CSV')
     }
 
+    function isAnomalyLabel(label: SampleLabel) {
+        return label === 'POTHOLE' || label === 'SPEED_BUMP'
+    }
+
+    async function uploadRecentDrivingCsvToCloud() {
+        const drivingSamples = collectedSamples.filter((sample) => sample.source === 'driving')
+        if (drivingSamples.length === 0) {
+            Alert.alert('No Driving Data', 'No recent driving samples found in Data Logger.')
+            return
+        }
+
+        const anomalySamples = drivingSamples.filter((sample) => isAnomalyLabel(sample.label))
+
+        try {
+            // Create both files locally: full driving CSV and anomaly-only CSV.
+            const fullFileUri = await createCsvFile(drivingSamples, 'roadsense_driving_full')
+            const anomalyFileUri = await createCsvFile(anomalySamples, 'roadsense_driving_anomaly')
+
+            if (anomalySamples.length === 0) {
+                Alert.alert(
+                    'No Anomaly Windows',
+                    `Full CSV created locally at:\n${fullFileUri}\n\nNo anomaly rows to upload.`,
+                )
+                return
+            }
+
+            const anomalyFileName = `roadsense_anomaly_${Date.now()}.csv`
+            await enqueueAnomalyCsvUpload(anomalyFileUri, anomalyFileName)
+            const sync = await flushPendingAnomalyCsvUploads()
+            const queueCount = await getPendingAnomalyCsvUploadCount()
+            setPendingCloudUploads(queueCount)
+
+            if (sync.uploaded > 0 && queueCount === 0) {
+                Alert.alert(
+                    'Cloud Upload Complete',
+                    `Created full + anomaly CSV locally.\nUploaded anomaly CSV rows: ${anomalySamples.length}\nBucket: roadsense-logs`,
+                )
+            } else {
+                Alert.alert(
+                    'Queued For Auto Upload',
+                    `No internet or upload temporary failed.\nQueued anomaly CSV files: ${queueCount}\nIt will auto-upload when internet is available.`,
+                )
+            }
+        } catch (error) {
+            console.error('Anomaly CSV upload failed:', error)
+            Alert.alert('Upload Failed', 'Could not create/upload anomaly CSV.')
+        }
+    }
+
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
             <View style={styles.hero}>
@@ -302,12 +379,22 @@ export default function DataLogger() {
                 </TouchableOpacity>
             </View>
 
+            <TouchableOpacity
+                style={[styles.actionButton, styles.cloudButton]}
+                onPress={() => void uploadRecentDrivingCsvToCloud()}
+                disabled={collectedSamples.length === 0}
+            >
+                <Text style={styles.actionButtonText}>Upload Anomaly CSV To Cloud</Text>
+            </TouchableOpacity>
+            <Text style={styles.pendingUploadsText}>Pending cloud uploads: {pendingCloudUploads}</Text>
+
             <View style={styles.instructionsCard}>
                 <Text style={styles.instructionsTitle}>Workflow</Text>
                 <Text style={styles.instructionsText}>1. Start collection</Text>
                 <Text style={styles.instructionsText}>2. Drive and capture road condition</Text>
                 <Text style={styles.instructionsText}>3. Label each window accurately</Text>
-                <Text style={styles.instructionsText}>4. Export CSV and train model</Text>
+                <Text style={styles.instructionsText}>4. Create full + anomaly CSV locally</Text>
+                <Text style={styles.instructionsText}>5. Upload only anomaly CSV to cloud</Text>
             </View>
 
             <Modal visible={exportPreviewVisible} transparent animationType="fade" onRequestClose={() => setExportPreviewVisible(false)}>
@@ -676,12 +763,23 @@ const styles = StyleSheet.create({
         backgroundColor: '#4b3040',
         borderColor: '#8e5e72',
     },
+    cloudButton: {
+        backgroundColor: '#1f3f57',
+        borderColor: '#66c8ff',
+        marginBottom: 16,
+    },
     actionButtonText: {
         color: '#f4fbff',
         fontWeight: '900',
         fontSize: 13,
         letterSpacing: 0.9,
         textTransform: 'uppercase',
+    },
+    pendingUploadsText: {
+        color: theme.colors.muted,
+        fontSize: 12,
+        marginBottom: 14,
+        textAlign: 'center',
     },
     instructionsCard: {
         backgroundColor: theme.colors.panel,
