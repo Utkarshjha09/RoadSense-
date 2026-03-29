@@ -386,8 +386,8 @@ export default function MapView() {
             ) : (
                 <GoogleMap
                     mapContainerStyle={mapContainerStyle}
-                    defaultCenter={defaultCenter}
-                    defaultZoom={12}
+                    center={defaultCenter}
+                    zoom={12}
                     options={mapOptions}
                     onLoad={onMapLoad}
                     onClick={handleMapClick}
