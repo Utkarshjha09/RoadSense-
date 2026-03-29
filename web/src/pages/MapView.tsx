@@ -19,11 +19,6 @@ const mapContainerStyle = {
     height: '100%',
 }
 
-const defaultCenter = {
-    lat: 28.6139,
-    lng: 77.209,
-}
-
 const mapOptions = {
     disableDefaultUI: false,
     zoomControl: true,
@@ -386,8 +381,6 @@ export default function MapView() {
             ) : (
                 <GoogleMap
                     mapContainerStyle={mapContainerStyle}
-                    center={defaultCenter}
-                    zoom={12}
                     options={mapOptions}
                     onLoad={onMapLoad}
                     onClick={handleMapClick}
