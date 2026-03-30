@@ -80,22 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return user.user_metadata?.password_setup_completed !== true
     }, [isGoogleUser, user])
 
-    const requiresLoginOtpVerification = useMemo(() => {
-        if (!user) {
-            return false
-        }
-
-        if (isGoogleUser) {
-            return false
-        }
-
-        if (typeof window === 'undefined') {
-            return false
-        }
-
-        return window.sessionStorage.getItem(LOGIN_METHOD_KEY) === 'password'
-            && window.sessionStorage.getItem(LOGIN_OTP_VERIFIED_KEY) !== 'true'
-    }, [isGoogleUser, user])
+    const requiresLoginOtpVerification =
+        Boolean(user)
+        && typeof window !== 'undefined'
+        && window.sessionStorage.getItem(LOGIN_METHOD_KEY) === 'password'
+        && window.sessionStorage.getItem(LOGIN_OTP_VERIFIED_KEY) !== 'true'
 
     async function loadProfile(userId: string) {
         try {

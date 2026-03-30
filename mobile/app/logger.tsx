@@ -9,7 +9,6 @@ import {
     enqueueAnomalyCsvUpload,
     flushPendingAnomalyCsvUploads,
     getPendingAnomalyCsvUploadCount,
-    uploadAnomalyCsvFile,
 } from '../src/services/supabase.service'
 
 type SampleLabel = 'POTHOLE' | 'SPEED_BUMP' | 'NORMAL'
@@ -283,20 +282,10 @@ export default function DataLogger() {
             const anomalyFileUri = await createCsvFile(anomalySamples, 'roadsense_driving_anomaly')
 
             if (anomalySamples.length === 0) {
-                const fullFileName = `roadsense_full_${Date.now()}.csv`
-                const uploadResult = await uploadAnomalyCsvFile(fullFileUri, fullFileName)
-                if (uploadResult.success) {
-                    Alert.alert(
-                        'Uploaded Full CSV',
-                        `No anomaly rows found, so uploaded full driving CSV instead.\n\nRoute: ${latestDrivingSession.routeName}\nSession: ${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}\nPath: ${uploadResult.path}`,
-                    )
-                } else {
-                    const fallbackMessage = uploadResult.error instanceof Error ? uploadResult.error.message : 'Failed to upload full CSV.'
-                    Alert.alert(
-                        'No Anomaly Windows',
-                        `Full CSV created locally for ${latestDrivingSession.routeName} (${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}).\n\nPath:\n${fullFileUri}\n\nNo anomaly rows to upload.\n\nFull CSV cloud upload also failed:\n${fallbackMessage}`,
-                    )
-                }
+                Alert.alert(
+                    'No Anomaly Windows',
+                    `Full CSV created locally for ${latestDrivingSession.routeName} (${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}).\n\nPath:\n${fullFileUri}\n\nNo anomaly rows to upload.`,
+                )
                 return
             }
 
