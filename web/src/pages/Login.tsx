@@ -19,6 +19,7 @@ export default function Login() {
     const {
         user,
         signIn,
+        signOut,
         signInWithGoogle,
         sendPasswordResetEmail,
         requiresLoginOtpVerification,
@@ -66,13 +67,29 @@ export default function Login() {
         setError('')
 
         try {
-            await verifyOtp(loginEmail, otp.trim(), 'login')
+            const otpCode = otp.replace(/\D/g, '').slice(0, 6)
+            if (otpCode.length !== 6) {
+                throw new Error('Enter a valid 6-digit OTP')
+            }
+            await verifyOtp(loginEmail, otpCode, 'login')
             markLoginOtpVerified()
             navigate('/')
         } catch (err: any) {
             setError(err.message || 'Failed to verify OTP')
         } finally {
             setOtpLoading(false)
+        }
+    }
+
+    async function handleBackToLogin() {
+        setError('')
+        setOtp('')
+        setOtpMessage('')
+        try {
+            await signOut()
+        } catch {
+            navigate('/login', { replace: true })
+            window.location.reload()
         }
     }
 
@@ -160,9 +177,11 @@ export default function Login() {
                             <input
                                 type="text"
                                 value={otp}
-                                onChange={(e) => setOtp(e.target.value)}
+                                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                 className="rs-input"
                                 placeholder="Enter 6-digit OTP"
+                                inputMode="numeric"
+                                maxLength={6}
                                 required
                             />
                         </div>
@@ -183,6 +202,14 @@ export default function Login() {
                             className="w-full rs-button-secondary py-3 px-4 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {resendLoading ? 'Sending...' : 'Resend OTP'}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => void handleBackToLogin()}
+                            className="w-full text-sm text-[var(--rs-muted)] hover:text-[var(--rs-text)]"
+                        >
+                            Back to login
                         </button>
                     </form>
                 ) : (

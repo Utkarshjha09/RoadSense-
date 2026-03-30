@@ -26,6 +26,8 @@ export default function AccountScreen() {
     const [otpSending, setOtpSending] = useState(false)
     const [passwordSaving, setPasswordSaving] = useState(false)
     const [mustSetPassword, setMustSetPassword] = useState(false)
+    const passwordPanelTitle = mustSetPassword ? 'Set Password' : 'Change Password'
+    const passwordSubmitLabel = mustSetPassword ? 'Set Password' : 'Change Password'
     const canSendOtp =
         password.trim().length >= 8 &&
         confirmPassword.trim().length >= 8 &&
@@ -145,7 +147,7 @@ export default function AccountScreen() {
             setOtp('')
             setOtpSent(false)
             setMustSetPassword(false)
-            setPasswordMessage('Password updated successfully.')
+            setPasswordMessage(mustSetPassword ? 'Password set successfully.' : 'Password updated successfully.')
         } catch (error: any) {
             setPasswordError(error.message || 'Failed to update password.')
         } finally {
@@ -200,7 +202,7 @@ export default function AccountScreen() {
             </View>
 
             <View style={styles.panel}>
-                <Text style={styles.sectionTitle}>Set Password</Text>
+                <Text style={styles.sectionTitle}>{passwordPanelTitle}</Text>
                 {passwordMessage ? <Text style={styles.successText}>{passwordMessage}</Text> : null}
                 {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
@@ -248,7 +250,7 @@ export default function AccountScreen() {
                         onPress={() => void handleSetPassword()}
                         disabled={passwordSaving}
                     >
-                        <Text style={styles.buttonPrimaryText}>{passwordSaving ? 'Updating...' : 'Set Password'}</Text>
+                        <Text style={styles.buttonPrimaryText}>{passwordSaving ? 'Updating...' : passwordSubmitLabel}</Text>
                     </TouchableOpacity>
                 </View>
 

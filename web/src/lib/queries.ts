@@ -1,5 +1,17 @@
 import { supabase, Anomaly, Profile, RepairValidationStat, RoadStateClusterPoint } from './supabase'
 
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const toRadians = (value: number) => (value * Math.PI) / 180
+    const earthRadiusKm = 6371
+    const dLat = toRadians(lat2 - lat1)
+    const dLon = toRadians(lon2 - lon1)
+    const a =
+        Math.sin(dLat / 2) ** 2
+        + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return earthRadiusKm * c
+}
+
 // Get anomalies in viewport
 export async function getAnomaliesInViewport(
     minLat: number,
@@ -46,6 +58,78 @@ export async function getAllAnomalies(filters?: {
     const { data, error } = await query
     if (error) throw error
     return data as Anomaly[]
+}
+
+export async function getNearbyAnomalies(
+    centerLat: number,
+    centerLng: number,
+    radiusKm: number,
+    filters?: {
+        type?: string
+        verified?: boolean
+        limit?: number
+    }
+) {
+    const latDelta = radiusKm / 111
+    const lonDelta = radiusKm / (111 * Math.max(Math.cos((centerLat * Math.PI) / 180), 0.01))
+
+    let query = supabase
+        .from('anomalies')
+        .select('*')
+        .gte('latitude', centerLat - latDelta)
+        .lte('latitude', centerLat + latDelta)
+        .gte('longitude', centerLng - lonDelta)
+        .lte('longitude', centerLng + lonDelta)
+        .order('created_at', { ascending: false })
+
+    if (filters?.type) {
+        query = query.eq('type', filters.type)
+    }
+
+    if (filters?.verified !== undefined) {
+        query = query.eq('verified', filters.verified)
+    }
+
+    const preLimit = Math.max((filters?.limit || 500) * 3, 200)
+    query = query.limit(preLimit)
+
+    const { data, error } = await query
+    if (error) throw error
+
+    const nearby = (data || [])
+        .filter((row) => {
+            const lat = Number(row.latitude)
+            const lng = Number(row.longitude)
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return false
+            }
+            return distanceKm(centerLat, centerLng, lat, lng) <= radiusKm
+        })
+
+    const sorted = nearby.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+
+    if (filters?.limit) {
+        return sorted.slice(0, filters.limit) as Anomaly[]
+    }
+
+    return sorted as Anomaly[]
+}
+
+export async function getRecentImprovedAnomalies(limit = 8, days = 30) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
+    const { data, error } = await supabase
+        .from('anomalies')
+        .select('*')
+        .eq('verified', true)
+        .gte('updated_at', since)
+        .order('updated_at', { ascending: false })
+        .limit(limit)
+
+    if (error) throw error
+    return (data || []) as Anomaly[]
 }
 
 // Get anomaly statistics

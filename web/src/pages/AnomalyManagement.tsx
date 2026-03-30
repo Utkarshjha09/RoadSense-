@@ -1,27 +1,104 @@
 import { useEffect, useState } from 'react'
-import { getAllAnomalies, verifyAnomaly, deleteAnomaly } from '../lib/queries'
+import {
+    getAllAnomalies,
+    getNearbyAnomalies,
+    getRecentImprovedAnomalies,
+    verifyAnomaly,
+    deleteAnomaly,
+} from '../lib/queries'
 import { Anomaly } from '../lib/supabase'
-import { CheckCircle, Trash2, Filter } from 'lucide-react'
+import { CheckCircle, Trash2, Filter, LocateFixed, Clock3 } from 'lucide-react'
 import LoaderBars from '../components/LoaderBars'
 
 export default function AnomalyManagement() {
     const [anomalies, setAnomalies] = useState<Anomaly[]>([])
+    const [recentImproved, setRecentImproved] = useState<Anomaly[]>([])
     const [loading, setLoading] = useState(true)
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const [filter, setFilter] = useState<'all' | 'POTHOLE' | 'SPEED_BUMP'>('all')
     const [verifiedFilter, setVerifiedFilter] = useState<'all' | 'repaired' | 'not_repaired'>('all')
+    const [locationMode, setLocationMode] = useState<'all' | 'nearby'>('all')
+    const [radiusKm, setRadiusKm] = useState(5)
+    const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+    const [locating, setLocating] = useState(false)
+    const [locationError, setLocationError] = useState<string | null>(null)
+    const [reportDays, setReportDays] = useState<7 | 30 | 90>(30)
 
     useEffect(() => {
-        loadAnomalies()
-    }, [filter, verifiedFilter])
+        void loadAnomalies()
+    }, [filter, verifiedFilter, locationMode, radiusKm, userLocation?.lat, userLocation?.lng])
+
+    useEffect(() => {
+        void loadRecentImproved(reportDays)
+    }, [reportDays])
+
+    async function requestLocation() {
+        if (!navigator.geolocation) {
+            setLocationError('Geolocation is not supported on this browser.')
+            return
+        }
+
+        setLocating(true)
+        setLocationError(null)
+
+        await new Promise<void>((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    setUserLocation({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                    })
+                    resolve()
+                },
+                () => {
+                    setLocationError('Could not access your location. Please allow location permission.')
+                    resolve()
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 12000,
+                    maximumAge: 30000,
+                }
+            )
+        })
+
+        setLocating(false)
+    }
+
+    async function loadRecentImproved(days = reportDays) {
+        try {
+            const data = await getRecentImprovedAnomalies(8, days)
+            setRecentImproved(data)
+        } catch (error) {
+            console.error('Error loading recent improved anomalies:', error)
+        }
+    }
 
     async function loadAnomalies() {
         try {
+            setLoading(true)
             setErrorMessage(null)
             const filters: any = {}
             if (filter !== 'all') filters.type = filter
             if (verifiedFilter === 'repaired') filters.verified = true
             if (verifiedFilter === 'not_repaired') filters.verified = false
+
+            if (locationMode === 'nearby') {
+                if (!userLocation) {
+                    setAnomalies([])
+                    setLoading(false)
+                    return
+                }
+
+                const data = await getNearbyAnomalies(
+                    userLocation.lat,
+                    userLocation.lng,
+                    radiusKm,
+                    filters
+                )
+                setAnomalies(data)
+                return
+            }
 
             const data = await getAllAnomalies(filters)
             setAnomalies(data)
@@ -36,7 +113,7 @@ export default function AnomalyManagement() {
     async function handleVerify(id: string) {
         try {
             await verifyAnomaly(id)
-            loadAnomalies()
+            await Promise.all([loadAnomalies(), loadRecentImproved(reportDays)])
         } catch (error) {
             console.error('Error verifying anomaly:', error)
             alert('Failed to verify anomaly')
@@ -48,7 +125,7 @@ export default function AnomalyManagement() {
 
         try {
             await deleteAnomaly(id)
-            loadAnomalies()
+            await Promise.all([loadAnomalies(), loadRecentImproved(reportDays)])
         } catch (error) {
             console.error('Error deleting anomaly:', error)
             alert('Failed to delete anomaly')
@@ -67,6 +144,9 @@ export default function AnomalyManagement() {
         const parsed = Number(value)
         return Number.isFinite(parsed) ? parsed : fallback
     }
+
+    const improvedPotholes = recentImproved.filter((item) => item.type === 'POTHOLE').length
+    const improvedSpeedBumps = recentImproved.filter((item) => item.type === 'SPEED_BUMP').length
 
     return (
         <div className="space-y-6 rs-fade-up">
@@ -90,9 +170,112 @@ export default function AnomalyManagement() {
                             <option value="repaired">Repaired</option>
                             <option value="not_repaired">Not Repaired</option>
                         </select>
+
+                        <select
+                            value={locationMode}
+                            onChange={(e) => setLocationMode(e.target.value as 'all' | 'nearby')}
+                            className="rs-select w-auto min-w-[180px]"
+                        >
+                            <option value="all">All Locations</option>
+                            <option value="nearby">Nearby Me</option>
+                        </select>
+
+                        {locationMode === 'nearby' && (
+                            <>
+                                <select
+                                    value={radiusKm}
+                                    onChange={(e) => setRadiusKm(Number(e.target.value))}
+                                    className="rs-select w-auto min-w-[140px]"
+                                >
+                                    <option value={1}>Within 1 km</option>
+                                    <option value={3}>Within 3 km</option>
+                                    <option value={5}>Within 5 km</option>
+                                    <option value={10}>Within 10 km</option>
+                                    <option value={20}>Within 20 km</option>
+                                </select>
+
+                                <button
+                                    type="button"
+                                    onClick={() => void requestLocation()}
+                                    disabled={locating}
+                                    className="rs-button-secondary inline-flex items-center gap-2 px-4 py-2 disabled:opacity-60"
+                                >
+                                    <LocateFixed size={16} />
+                                    {locating ? 'Getting location...' : userLocation ? 'Refresh My Location' : 'Use My Location'}
+                                </button>
+                            </>
+                        )}
                     </div>
                     <div className="ml-auto text-[var(--rs-muted)]">{anomalies.length} anomalies</div>
                 </div>
+                {locationMode === 'nearby' && !userLocation && (
+                    <p className="text-sm text-[var(--rs-muted)] mt-4">
+                        Select Use My Location to show nearby anomalies.
+                    </p>
+                )}
+                {locationMode === 'nearby' && userLocation && (
+                    <p className="text-sm text-[var(--rs-muted)] mt-4">
+                        Showing anomalies within {radiusKm} km of your location ({toNumber(userLocation.lat).toFixed(4)}, {toNumber(userLocation.lng).toFixed(4)}).
+                    </p>
+                )}
+                {locationError && (
+                    <p className="text-sm text-amber-300 mt-3">{locationError}</p>
+                )}
+            </div>
+
+            <div className="rs-panel p-6">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                        <h3 className="text-lg font-semibold text-[var(--rs-text)] inline-flex items-center gap-2">
+                            <Clock3 size={18} />
+                            Recently Improved Roads
+                        </h3>
+                        <p className="text-sm text-[var(--rs-muted)] mt-1">
+                            Latest repaired potholes and speed bumps
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <select
+                            value={reportDays}
+                            onChange={(e) => setReportDays(Number(e.target.value) as 7 | 30 | 90)}
+                            className="rs-select w-auto min-w-[170px]"
+                        >
+                            <option value={7}>Last 7 days</option>
+                            <option value={30}>Last 30 days</option>
+                            <option value={90}>Last 90 days</option>
+                        </select>
+                        <div className="text-sm text-[var(--rs-muted)]">
+                            Potholes improved: <span className="text-[var(--rs-text)] font-semibold">{improvedPotholes}</span> • Speed bumps improved: <span className="text-[var(--rs-text)] font-semibold">{improvedSpeedBumps}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {recentImproved.length === 0 ? (
+                    <div className="text-sm text-[var(--rs-muted)] mt-4">No improved anomalies were updated recently.</div>
+                ) : (
+                    <div className="mt-4 overflow-x-auto">
+                        <table className="w-full rs-table">
+                            <thead>
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Type</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Location</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Updated</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--rs-border)]">
+                                {recentImproved.map((item) => (
+                                    <tr key={`improved-${item.id}`}>
+                                        <td className="px-4 py-3 text-sm text-[var(--rs-text)]">{item.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}</td>
+                                        <td className="px-4 py-3 text-sm text-[var(--rs-text)]">{toNumber(item.latitude).toFixed(4)}, {toNumber(item.longitude).toFixed(4)}</td>
+                                        <td className="px-4 py-3 text-sm text-[var(--rs-muted)]">{new Date(item.updated_at || item.created_at).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-sm text-[var(--rs-text)]">{(toNumber(item.confidence) * 100).toFixed(0)}%</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             <div className="rs-panel overflow-hidden">

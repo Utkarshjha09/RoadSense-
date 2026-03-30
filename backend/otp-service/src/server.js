@@ -391,26 +391,31 @@ app.post('/otp/verify', async (req, res) => {
       .eq('purpose', purpose)
       .is('verified_at', null)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(10)
 
     if (error) {
       return res.status(500).json({ error: `Supabase lookup failed: ${error.message}` })
     }
 
-    if (!data) {
+    if (!data || data.length === 0) {
       return res.status(404).json({ error: 'No active OTP found' })
     }
 
-    if (new Date(data.expires_at).getTime() < Date.now()) {
+    const now = Date.now()
+    const nonExpiredOtps = data.filter((row) => new Date(row.expires_at).getTime() >= now)
+
+    if (nonExpiredOtps.length === 0) {
       return res.status(400).json({ error: 'OTP has expired' })
     }
 
-    if (data.otp_hash !== hashOtp(otp)) {
+    const matchedOtp = nonExpiredOtps.find((row) => row.otp_hash === hashOtp(otp))
+
+    if (!matchedOtp) {
+      const latestOtp = nonExpiredOtps[0]
       await supabase
         .from('email_otp_verifications')
-        .update({ attempts: Number(data.attempts || 0) + 1 })
-        .eq('id', data.id)
+        .update({ attempts: Number(latestOtp.attempts || 0) + 1 })
+        .eq('id', latestOtp.id)
 
       return res.status(400).json({ error: 'Invalid OTP' })
     }
@@ -419,9 +424,9 @@ app.post('/otp/verify', async (req, res) => {
       .from('email_otp_verifications')
       .update({
         verified_at: new Date().toISOString(),
-        attempts: Number(data.attempts || 0) + 1,
+        attempts: Number(matchedOtp.attempts || 0) + 1,
       })
-      .eq('id', data.id)
+      .eq('id', matchedOtp.id)
 
     if (verifyError) {
       return res.status(500).json({ error: `Supabase verify failed: ${verifyError.message}` })
