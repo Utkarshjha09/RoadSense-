@@ -238,9 +238,14 @@ export class SensorService {
                     console.warn(`Cloud queue warning: ${result.queueError}`);
                     this.lastQueueWarningAt = now;
                     this.lastQueueWarningMessage = result.queueError;
+                    this.emitStatus('error', `Cloud upload issue: ${result.queueError}`);
                 }
             }
             if (result.success) {
+                if (this.lastQueueWarningMessage) {
+                    this.lastQueueWarningMessage = '';
+                    this.emitStatus('streaming', this.currentSource === 'phone' ? 'Using phone motion sensors' : 'Using ESP32 stream');
+                }
                 await flushOfflineEvents();
                 await this.pullLatestCloudPrediction();
             }

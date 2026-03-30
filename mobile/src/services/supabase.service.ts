@@ -153,7 +153,10 @@ export async function uploadAnomalyCsvFile(fileUri: string, fileName: string) {
         const { data: authData, error: authError } = await supabase.auth.getUser()
         if (authError) throw authError
 
-        const userId = authData.user?.id || 'anonymous'
+        const userId = authData.user?.id
+        if (!userId) {
+            throw new Error('User not authenticated. Sign in before uploading CSV to Supabase.')
+        }
         const day = new Date().toISOString().slice(0, 10)
         const path = `driving-csv/${userId}/${day}/${fileName}`
 
@@ -218,12 +221,13 @@ export async function getPendingAnomalyCsvUploadCount() {
 export async function flushPendingAnomalyCsvUploads() {
     const queue = await readPendingAnomalyCsvUploads()
     if (queue.length === 0) {
-        return { uploaded: 0, remaining: 0, failed: false }
+        return { uploaded: 0, remaining: 0, failed: false, errorMessage: null as string | null }
     }
 
     let uploaded = 0
     const remaining: PendingAnomalyCsvUpload[] = []
     let failed = false
+    let errorMessage: string | null = null
 
     for (let i = 0; i < queue.length; i += 1) {
         const item = queue[i]
@@ -234,10 +238,17 @@ export async function flushPendingAnomalyCsvUploads() {
         }
 
         failed = true
+        if (uploadedItem.error instanceof Error) {
+            errorMessage = uploadedItem.error.message
+        } else if (typeof uploadedItem.error === 'string') {
+            errorMessage = uploadedItem.error
+        } else {
+            errorMessage = 'Unknown upload error'
+        }
         remaining.push(item, ...queue.slice(i + 1))
         break
     }
 
     await writePendingAnomalyCsvUploads(remaining)
-    return { uploaded, remaining: remaining.length, failed }
+    return { uploaded, remaining: remaining.length, failed, errorMessage }
 }

@@ -54,6 +54,7 @@ const API_SECRET = (process.env.EXPO_PUBLIC_API_SECRET || '').trim()
 const OFFLINE_QUEUE_KEY = 'roadsense_cloud_offline_events_v1'
 const MAX_QUEUE_EVENTS = 5000
 const SYNC_CHUNK_SIZE = 100
+const REQUEST_TIMEOUT_MS = 20000
 
 let cachedDeviceId: string | null = null
 let localCounter = 0
@@ -106,9 +107,16 @@ async function enqueueOffline(events: CloudSensorEvent[]): Promise<void> {
     await writeOfflineQueue([...current, ...events])
 }
 
-async function postBatch(path: string, events: CloudSensorEvent[]): Promise<{ ok: boolean; body?: any }> {
+function getErrorMessage(body: any): string | null {
+    if (!body || typeof body !== 'object') return null
+    if (typeof body.error === 'string' && body.error.trim()) return body.error.trim()
+    if (typeof body.detail === 'string' && body.detail.trim()) return body.detail.trim()
+    return null
+}
+
+async function postBatch(path: string, events: CloudSensorEvent[]): Promise<{ ok: boolean; body?: any; status?: number; error?: string }> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8000)
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
         const response = await fetch(`${CLOUD_API_BASE}${path}`, {
             method: 'POST',
@@ -125,9 +133,14 @@ async function postBatch(path: string, events: CloudSensorEvent[]): Promise<{ ok
         } catch {
             body = null
         }
-        return { ok: response.ok, body }
-    } catch {
-        return { ok: false }
+        if (!response.ok) {
+            const reason = getErrorMessage(body) || `HTTP ${response.status}`
+            return { ok: false, body, status: response.status, error: reason }
+        }
+        return { ok: true, body, status: response.status }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Network request failed'
+        return { ok: false, error: message }
     } finally {
         clearTimeout(timeout)
     }
@@ -161,7 +174,8 @@ export async function submitLiveEvents(events: CloudSensorEvent[]): Promise<{ su
         return { success: true, queueError: result.body?.queue_error ?? null }
     }
     await enqueueOffline(events)
-    return { success: false, queueError: 'Live upload failed; queued for retry' }
+    const reason = result.error || (result.status ? `HTTP ${result.status}` : 'network timeout/unreachable')
+    return { success: false, queueError: `Live upload failed (${reason}); queued for retry` }
 }
 
 export async function flushOfflineEvents(): Promise<void> {
@@ -187,7 +201,7 @@ export async function fetchLatestPredictions(limit = 20): Promise<CloudPredictio
     if (!isCloudApiConfigured) return []
     const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)))
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8000)
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
         const response = await fetch(`${CLOUD_API_BASE}/v1/predictions/latest?limit=${safeLimit}`, {
             method: 'GET',

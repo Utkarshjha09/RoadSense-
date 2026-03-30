@@ -23,14 +23,21 @@ const {
   CONTACT_TO_EMAIL,
   RECAPTCHA_SECRET_KEY,
   OTP_EXPIRY_MINUTES = '10',
+  RESEND_API_KEY = '',
+  RESEND_API_BASE_URL = 'https://api.resend.com',
 } = process.env
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required')
 }
 
-if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !OTP_FROM_EMAIL) {
-  throw new Error('SMTP_HOST, SMTP_USER, SMTP_PASS, and OTP_FROM_EMAIL are required')
+if (!OTP_FROM_EMAIL) {
+  throw new Error('OTP_FROM_EMAIL is required')
+}
+
+const usingResendApi = Boolean(RESEND_API_KEY)
+if (!usingResendApi && (!SMTP_HOST || !SMTP_USER || !SMTP_PASS)) {
+  throw new Error('Either RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS must be configured')
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -44,32 +51,98 @@ const allowedOrigins = Array.from(
   )
 )
 
+function normalizeOrigin(origin) {
+  try {
+    const url = new URL(origin)
+    const host = url.hostname.replace(/^www\./i, '')
+    return `${url.protocol}//${host}${url.port ? `:${url.port}` : ''}`
+  } catch {
+    return origin
+  }
+}
+
+const allowedOriginSet = new Set([
+  ...allowedOrigins,
+  ...allowedOrigins.map((origin) => normalizeOrigin(origin)),
+])
+
 app.use(cors({
   origin(origin, cb) {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    if (!origin) return cb(null, true)
+    if (allowedOriginSet.has(origin) || allowedOriginSet.has(normalizeOrigin(origin))) {
+      return cb(null, true)
+    }
+    console.error(`CORS blocked for origin: ${origin}. Allowed: ${Array.from(allowedOriginSet).join(', ')}`)
     return cb(new Error(`CORS blocked for origin: ${origin}`))
   },
   credentials: true,
 }))
 app.use(express.json())
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT),
-  secure: SMTP_SECURE === 'true',
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
-})
+const transporter = usingResendApi
+  ? null
+  : nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT),
+      secure: SMTP_SECURE === 'true',
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+    })
 
-transporter.verify()
-  .then(() => {
-    console.log('SMTP connection verified')
+if (usingResendApi) {
+  console.log('Email provider: Resend API')
+} else if (transporter) {
+  transporter.verify()
+    .then(() => {
+      console.log('SMTP connection verified')
+    })
+    .catch((error) => {
+      console.error('SMTP verification failed:', error)
+    })
+}
+
+async function sendEmail({ from, to, subject, text, html, replyTo }) {
+  if (usingResendApi) {
+    const response = await fetch(`${RESEND_API_BASE_URL}/emails`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: Array.isArray(to) ? to : [to],
+        subject,
+        text,
+        html,
+        reply_to: replyTo || undefined,
+      }),
+    })
+
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const resendError = body?.message || body?.error || `HTTP ${response.status}`
+      throw new Error(`Resend API send failed: ${resendError}`)
+    }
+
+    return body
+  }
+
+  if (!transporter) {
+    throw new Error('No email provider available')
+  }
+
+  return transporter.sendMail({
+    from,
+    to,
+    subject,
+    text,
+    html,
+    replyTo,
   })
-  .catch((error) => {
-    console.error('SMTP verification failed:', error)
-  })
+}
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000))
@@ -165,7 +238,7 @@ app.post('/otp/send', async (req, res) => {
       return res.status(500).json({ error: `Supabase insert failed: ${insertError.message}` })
     }
 
-    await transporter.sendMail({
+    await sendEmail({
       from: OTP_FROM_EMAIL,
       to: email,
       subject: purpose === 'login' ? 'Your RoadSense login OTP' : 'Your RoadSense password change OTP',
@@ -228,7 +301,7 @@ app.post('/contact/send', async (req, res) => {
     const destination = sanitizeContactValue(CONTACT_TO_EMAIL, OTP_FROM_EMAIL)
     const submittedAt = new Date().toISOString()
 
-    await transporter.sendMail({
+    await sendEmail({
       from: OTP_FROM_EMAIL,
       to: destination,
       replyTo: email,
@@ -263,7 +336,7 @@ app.post('/contact/send', async (req, res) => {
     })
 
     // Send acknowledgment in background so API responds quickly on slower mobile networks.
-    transporter.sendMail({
+    sendEmail({
       from: OTP_FROM_EMAIL,
       to: email,
       subject: `RoadSense: We received your message - ${subject}`,

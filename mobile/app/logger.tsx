@@ -301,9 +301,10 @@ export default function DataLogger() {
                     `Route: ${latestDrivingSession.routeName}\nSession: ${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}\n\nCreated full + anomaly CSV locally.\nUploaded anomaly CSV rows: ${anomalySamples.length}\nBucket: roadsense-logs`,
                 )
             } else {
+                const errorLine = sync.errorMessage ? `\n\nLast upload error:\n${sync.errorMessage}` : ''
                 Alert.alert(
                     'Queued For Auto Upload',
-                    `Route: ${latestDrivingSession.routeName}\nSession: ${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}\n\nNo internet or upload temporary failed.\nQueued anomaly CSV files: ${queueCount}\nIt will auto-upload when internet is available.`,
+                    `Route: ${latestDrivingSession.routeName}\nSession: ${formatSessionRange(latestDrivingSession.startIso, latestDrivingSession.endIso)}\n\nNo internet or upload temporary failed.\nQueued anomaly CSV files: ${queueCount}\nIt will auto-upload when internet is available.${errorLine}`,
                 )
             }
         } catch (error) {
