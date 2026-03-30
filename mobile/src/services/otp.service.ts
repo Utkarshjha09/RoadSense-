@@ -7,7 +7,7 @@ const OTP_REQUEST_TIMEOUT_MS = 20000
 
 type OtpPurpose = 'login' | 'password_change'
 
-export const isOtpConfigured = Boolean(configuredOtpServiceUrl)
+export const isOtpConfigured = Boolean(normalizeBaseUrl(configuredOtpServiceUrl) || normalizeBaseUrl(FALLBACK_OTP_SERVICE_URL))
 
 function normalizeBaseUrl(value: string) {
     const trimmed = value.trim().replace(/\/+$/, '')
@@ -54,11 +54,10 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = O
 }
 
 async function request(path: string, body: Record<string, string>) {
-    if (!isOtpConfigured) {
+    const candidates = getServiceUrls()
+    if (candidates.length === 0) {
         throw new Error('OTP service is not configured in this build.')
     }
-
-    const candidates = getServiceUrls()
     let lastError = ''
 
     for (const baseUrl of candidates) {

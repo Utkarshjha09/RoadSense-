@@ -3,8 +3,6 @@ import { NativeModules } from 'react-native'
 const configuredContactServiceUrl = (process.env.EXPO_PUBLIC_OTP_SERVICE_URL || '').trim()
 const FALLBACK_CONTACT_SERVICE_URL = 'https://roadsense-otp-service.onrender.com'
 
-export const isContactConfigured = Boolean(configuredContactServiceUrl)
-
 export type ContactPayload = {
     name: string
     email: string
@@ -52,6 +50,8 @@ function buildCandidateServiceUrls() {
     return Array.from(new Set(candidates))
 }
 
+export const isContactConfigured = Boolean(normalizeBaseUrl(configuredContactServiceUrl) || normalizeBaseUrl(FALLBACK_CONTACT_SERVICE_URL))
+
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 25000) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
@@ -63,11 +63,10 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 2
 }
 
 export async function sendContactMessage(payload: ContactPayload) {
-    if (!isContactConfigured) {
+    const candidates = buildCandidateServiceUrls()
+    if (candidates.length === 0) {
         throw new Error('Contact service is not configured in this build.')
     }
-
-    const candidates = buildCandidateServiceUrls()
     const requestBody = JSON.stringify({
         ...payload,
         // Keep both keys for compatibility with old/new backend payloads.
