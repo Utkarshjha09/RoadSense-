@@ -3,6 +3,7 @@ import { NativeModules } from 'react-native'
 const configuredOtpServiceUrl = (process.env.EXPO_PUBLIC_OTP_SERVICE_URL || '').trim()
 const FALLBACK_OTP_SERVICE_URL = 'https://roadsense-otp-service.onrender.com'
 const allowLocalOtpFallback = process.env.EXPO_PUBLIC_OTP_ALLOW_LOCAL === '1'
+const OTP_REQUEST_TIMEOUT_MS = 20000
 
 type OtpPurpose = 'login' | 'password_change'
 
@@ -42,7 +43,7 @@ function getServiceUrls() {
     return Array.from(new Set(urls))
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 7000) {
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = OTP_REQUEST_TIMEOUT_MS) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
@@ -77,7 +78,11 @@ async function request(path: string, body: Record<string, string>) {
 
             return payload
         } catch (error) {
-            lastError = error instanceof Error ? error.message : 'OTP request failed'
+            if (error instanceof Error && error.name === 'AbortError') {
+                lastError = `Request timed out after ${OTP_REQUEST_TIMEOUT_MS / 1000}s`
+            } else {
+                lastError = error instanceof Error ? error.message : 'OTP request failed'
+            }
         }
     }
 
