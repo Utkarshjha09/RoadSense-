@@ -160,6 +160,9 @@ class EnsembleInferenceEngine:
     def predict(self, event: EventRecord) -> InferenceResult:
         self._load_models()
         model_input = self._event_to_window(event)
+        shock = abs(event.az - 9.81) + (abs(event.ax) + abs(event.ay)) * 0.35
+        angular = abs(event.gx) + abs(event.gy) + abs(event.gz)
+        heuristic_score = shock + angular * 0.15
 
         h5_probs = self._predict_h5(model_input)
         tflite_probs = self._predict_tflite(model_input)
@@ -176,12 +179,9 @@ class EnsembleInferenceEngine:
             model_version = f"{self._version}-tflite"
         else:
             # Fallback heuristic when model load failed.
-            shock = abs(event.az - 9.81) + (abs(event.ax) + abs(event.ay)) * 0.35
-            angular = abs(event.gx) + abs(event.gy) + abs(event.gz)
-            score = shock + angular * 0.15
-            if score >= 4.0:
+            if heuristic_score >= 4.0:
                 return InferenceResult(predicted_type="POTHOLE", confidence=0.82, model_version="heuristic-fallback")
-            if score >= 2.2:
+            if heuristic_score >= 2.2:
                 return InferenceResult(predicted_type="SPEED_BUMP", confidence=0.72, model_version="heuristic-fallback")
             return InferenceResult(predicted_type="SMOOTH", confidence=0.90, model_version="heuristic-fallback")
 
@@ -191,6 +191,23 @@ class EnsembleInferenceEngine:
         class_id = int(np.argmax(probs))
         confidence = float(np.clip(probs[class_id], 0.0, 1.0))
         predicted_type = CLASS_NAMES.get(class_id, "SMOOTH")
+
+        # Guardrail: live stream currently predicts from per-event snapshots.
+        # If model says smooth while motion shock is high, override with a safer class.
+        if predicted_type == "SMOOTH":
+            if heuristic_score >= 4.2:
+                return InferenceResult(
+                    predicted_type="POTHOLE",
+                    confidence=max(confidence, 0.78),
+                    model_version=f"{model_version}-guardrail",
+                )
+            if heuristic_score >= 2.4:
+                return InferenceResult(
+                    predicted_type="SPEED_BUMP",
+                    confidence=max(confidence, 0.68),
+                    model_version=f"{model_version}-guardrail",
+                )
+
         return InferenceResult(predicted_type=predicted_type, confidence=confidence, model_version=model_version)
 
 
