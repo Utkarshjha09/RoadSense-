@@ -9,6 +9,12 @@ const fallbackUrl = 'https://placeholder.supabase.co'
 const fallbackAnonKey = 'placeholder-anon-key'
 const OFFLINE_ANOMALY_UPLOAD_KEY = 'roadsense_offline_anomaly_csv_uploads_v1'
 
+function hasValidCoordinates(latitude: number, longitude: number) {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false
+    if (Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001) return false
+    return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
+}
+
 function hasPlaceholderConfig(value: string) {
     const normalized = value.toLowerCase()
     return (
@@ -60,6 +66,10 @@ export async function uploadAnomaly(data: {
     }
 
     try {
+        if (!hasValidCoordinates(data.latitude, data.longitude)) {
+            return { success: false, error: new Error('Invalid GPS coordinates. Wait for a valid location fix and retry.') }
+        }
+
         const { data: result, error } = await supabase.rpc('insert_anomaly', {
             p_user_id: (await supabase.auth.getUser()).data.user?.id,
             p_type: data.type,
@@ -121,6 +131,10 @@ export async function uploadSensorEvent(data: {
     }
 
     try {
+        if (!hasValidCoordinates(data.latitude, data.longitude)) {
+            return { success: false, error: new Error('Invalid GPS coordinates for sensor event upload') }
+        }
+
         const { data: authData } = await supabase.auth.getUser()
         const userId = authData.user?.id || null
 

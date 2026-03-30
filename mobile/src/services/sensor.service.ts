@@ -53,6 +53,16 @@ interface Esp32Payload {
     timestamp?: number;
 }
 
+function hasValidCoordinates(latitude: number, longitude: number): boolean {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return false;
+    }
+    if (Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001) {
+        return false;
+    }
+    return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+}
+
 export class SensorService {
     private subscription: Subscription | null = null;
     private locationSubscription: ReturnType<typeof setInterval> | null = null;
@@ -110,12 +120,28 @@ export class SensorService {
             const location = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.Balanced,
             });
-            this.currentLocation = {
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-            };
+            if (hasValidCoordinates(location.coords.latitude, location.coords.longitude)) {
+                this.currentLocation = {
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                };
+            }
         } catch (error) {
             console.warn('Could not get initial location:', error);
+            try {
+                const lastKnown = await Location.getLastKnownPositionAsync({
+                    maxAge: 180000,
+                    requiredAccuracy: 250,
+                });
+                if (lastKnown?.coords && hasValidCoordinates(lastKnown.coords.latitude, lastKnown.coords.longitude)) {
+                    this.currentLocation = {
+                        latitude: lastKnown.coords.latitude,
+                        longitude: lastKnown.coords.longitude,
+                    };
+                }
+            } catch (fallbackError) {
+                console.warn('Could not get last known location:', fallbackError);
+            }
         }
 
         this.locationSubscription = setInterval(async () => {
@@ -123,10 +149,12 @@ export class SensorService {
                 const location = await Location.getCurrentPositionAsync({
                     accuracy: Location.Accuracy.Balanced,
                 });
-                this.currentLocation = {
-                    latitude: location.coords.latitude,
-                    longitude: location.coords.longitude,
-                };
+                if (hasValidCoordinates(location.coords.latitude, location.coords.longitude)) {
+                    this.currentLocation = {
+                        latitude: location.coords.latitude,
+                        longitude: location.coords.longitude,
+                    };
+                }
             } catch (error) {
                 console.warn('Location update failed:', error);
             }
@@ -190,7 +218,7 @@ export class SensorService {
 
         void this.queueCloudReading(reading);
 
-        if (reading.latitude !== 0 || reading.longitude !== 0) {
+        if (hasValidCoordinates(reading.latitude, reading.longitude)) {
             this.currentLocation = {
                 latitude: reading.latitude,
                 longitude: reading.longitude,
@@ -207,6 +235,9 @@ export class SensorService {
 
     private async queueCloudReading(reading: CombinedReading): Promise<void> {
         if (!isCloudApiConfigured) {
+            return;
+        }
+        if (!hasValidCoordinates(reading.latitude, reading.longitude)) {
             return;
         }
         try {

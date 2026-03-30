@@ -10,6 +10,7 @@ import './index.css'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const MapView = lazy(() => import('./pages/MapView'))
 const AnomalyManagement = lazy(() => import('./pages/AnomalyManagement'))
+const Reports = lazy(() => import('./pages/Reports'))
 const UserManagement = lazy(() => import('./pages/UserManagement'))
 const Profile = lazy(() => import('./pages/Profile'))
 const About = lazy(() => import('./pages/About'))
@@ -129,6 +130,14 @@ function App() {
                                 element={
                                     <Suspense fallback={<RouteLoader />}>
                                         <AnomalyManagement />
+                                    </Suspense>
+                                }
+                            />
+                            <Route
+                                path="reports"
+                                element={
+                                    <Suspense fallback={<RouteLoader />}>
+                                        <Reports />
                                     </Suspense>
                                 }
                             />

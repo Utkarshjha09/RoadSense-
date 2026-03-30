@@ -16,10 +16,10 @@ function withGoogleMapsPlugin(plugins = []) {
   })
 }
 
-const baseExpo = appJson.expo || {}
+module.exports = ({ config }) => {
+  const baseExpo = config && Object.keys(config).length > 0 ? config : (appJson.expo || {})
 
-module.exports = {
-  expo: {
+  return {
     ...baseExpo,
     icon: './assets/icon.png',
     splash: {
@@ -44,5 +44,5 @@ module.exports = {
       },
     },
     plugins: withGoogleMapsPlugin(baseExpo.plugins || []),
-  },
+  }
 }

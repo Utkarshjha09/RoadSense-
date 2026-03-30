@@ -202,6 +202,16 @@ function getPredictionBadgeCopy(prediction: PredictionResult | null, isActive: b
     }
 }
 
+function hasValidCoordinates(latitude: number, longitude: number) {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return false
+    }
+    if (Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001) {
+        return false
+    }
+    return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
+}
+
 export default function DrivingScreen() {
     const [isActive, setIsActive] = useState(false)
     const [modelReady, setModelReady] = useState(false)
@@ -237,6 +247,7 @@ export default function DrivingScreen() {
 
     const sensorServiceRef = useRef<SensorService | null>(null)
     const mapRef = useRef<MapView>(null)
+    const locationRef = useRef(location)
     const routeFocusUntilRef = useRef(0)
     const lastCameraUpdateRef = useRef(0)
     const lastCameraHeadingRef = useRef(0)
@@ -260,6 +271,10 @@ export default function DrivingScreen() {
             longitudeDelta: 0.0005,
         })
     )
+
+    useEffect(() => {
+        locationRef.current = location
+    }, [location])
 
     const selectedRoute = routeOptions.find((route) => route.id === selectedRouteId) || null
     const recommendedRouteId =
@@ -693,20 +708,39 @@ export default function DrivingScreen() {
         const onAnomaly = (prediction: PredictionResult) => {
             Vibration.vibrate([0, 200, 100, 200])
 
+            const fallbackLatitude = locationRef.current.latitude
+            const fallbackLongitude = locationRef.current.longitude
+            const latitude = hasValidCoordinates(prediction.latitude, prediction.longitude)
+                ? prediction.latitude
+                : fallbackLatitude
+            const longitude = hasValidCoordinates(prediction.latitude, prediction.longitude)
+                ? prediction.longitude
+                : fallbackLongitude
+
+            if (!hasValidCoordinates(latitude, longitude)) {
+                console.warn('Skipped anomaly upload due to invalid coordinates', {
+                    predictionLatitude: prediction.latitude,
+                    predictionLongitude: prediction.longitude,
+                    fallbackLatitude,
+                    fallbackLongitude,
+                })
+                return
+            }
+
             const detection = {
                 type: prediction.className === 'Pothole' ? 'POTHOLE' : 'SPEED_BUMP' as 'POTHOLE' | 'SPEED_BUMP',
                 severity: prediction.confidence / 100,
                 confidence: prediction.confidence / 100,
                 timestamp: new Date().toISOString(),
-                latitude: prediction.latitude,
-                longitude: prediction.longitude,
+                latitude,
+                longitude,
             }
 
             setDetections((prev) => [detection, ...prev].slice(0, 20))
 
             uploadAnomaly({
-                latitude: prediction.latitude,
-                longitude: prediction.longitude,
+                latitude,
+                longitude,
                 type: detection.type,
                 severity: detection.severity,
                 confidence: detection.confidence,

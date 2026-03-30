@@ -238,9 +238,9 @@ export default function AccountScreen() {
 
                 <View style={styles.actionRow}>
                     <TouchableOpacity
-                        style={[styles.buttonSecondary, (otpSending || !canSendOtp) && styles.buttonDisabled]}
+                        style={[styles.buttonSecondary, otpSending && styles.buttonDisabled]}
                         onPress={() => void handleSendOtp()}
-                        disabled={otpSending || !canSendOtp}
+                        disabled={otpSending}
                     >
                         <Text style={styles.buttonSecondaryText}>{otpSending ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}</Text>
                     </TouchableOpacity>

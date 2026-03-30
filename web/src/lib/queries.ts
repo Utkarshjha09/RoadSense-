@@ -12,6 +12,12 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
     return earthRadiusKm * c
 }
 
+function isValidAnomalyPoint(latitude: number, longitude: number) {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false
+    if (Math.abs(latitude) < 0.000001 && Math.abs(longitude) < 0.000001) return false
+    return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
+}
+
 // Get anomalies in viewport
 export async function getAnomaliesInViewport(
     minLat: number,
@@ -29,7 +35,7 @@ export async function getAnomaliesInViewport(
     })
 
     if (error) throw error
-    return data as Anomaly[]
+    return (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude))) as Anomaly[]
 }
 
 // Get all anomalies with filters
@@ -57,7 +63,7 @@ export async function getAllAnomalies(filters?: {
 
     const { data, error } = await query
     if (error) throw error
-    return data as Anomaly[]
+    return (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude))) as Anomaly[]
 }
 
 export async function getNearbyAnomalies(
@@ -100,7 +106,7 @@ export async function getNearbyAnomalies(
         .filter((row) => {
             const lat = Number(row.latitude)
             const lng = Number(row.longitude)
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            if (!isValidAnomalyPoint(lat, lng)) {
                 return false
             }
             return distanceKm(centerLat, centerLng, lat, lng) <= radiusKm
@@ -129,21 +135,22 @@ export async function getRecentImprovedAnomalies(limit = 8, days = 30) {
         .limit(limit)
 
     if (error) throw error
-    return (data || []) as Anomaly[]
+    return (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude))) as Anomaly[]
 }
 
 // Get anomaly statistics
 export async function getAnomalyStats() {
     const { data, error } = await supabase
         .from('anomalies')
-        .select('type, verified, created_at')
+        .select('type, verified, created_at, latitude, longitude')
 
     if (error) throw error
 
-    const total = data.length
-    const potholes = data.filter((a) => a.type === 'POTHOLE').length
-    const speedBumps = data.filter((a) => a.type === 'SPEED_BUMP').length
-    const verified = data.filter((a) => a.verified).length
+    const validRows = (data || []).filter((a: any) => isValidAnomalyPoint(Number(a.latitude), Number(a.longitude)))
+    const total = validRows.length
+    const potholes = validRows.filter((a: any) => a.type === 'POTHOLE').length
+    const speedBumps = validRows.filter((a: any) => a.type === 'SPEED_BUMP').length
+    const verified = validRows.filter((a: any) => a.verified).length
 
     return {
         total,
@@ -151,6 +158,32 @@ export async function getAnomalyStats() {
         speedBumps,
         verified,
         verificationRate: total > 0 ? (verified / total) * 100 : 0,
+    }
+}
+
+export async function getRepairedSummary(days: 7 | 30 | 90 = 30) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+    const { data, error } = await supabase
+        .from('anomalies')
+        .select('type, verified, created_at, latitude, longitude')
+        .gte('created_at', since)
+
+    if (error) throw error
+
+    const rows = (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude)))
+    const total = rows.length
+    const repairedRows = rows.filter((row) => row.verified)
+    const repairedTotal = repairedRows.length
+    const repairedPotholes = repairedRows.filter((row) => row.type === 'POTHOLE').length
+    const repairedSpeedBumps = repairedRows.filter((row) => row.type === 'SPEED_BUMP').length
+
+    return {
+        total,
+        repairedTotal,
+        repairedPotholes,
+        repairedSpeedBumps,
+        repairedPercent: total > 0 ? (repairedTotal / total) * 100 : 0,
+        pendingTotal: Math.max(total - repairedTotal, 0),
     }
 }
 
