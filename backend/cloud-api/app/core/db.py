@@ -20,7 +20,9 @@ def get_pool() -> ConnectionPool:
             min_size=1,
             max_size=10,
             timeout=10,
-            kwargs={"autocommit": False},
+            # Supabase pooler/PgBouncer can invalidate server-side prepared statements
+            # across transaction-pooled connections. Disable auto-prepare in psycopg.
+            kwargs={"autocommit": False, "prepare_threshold": None},
         )
         _pool.open(wait=True)
     return _pool
