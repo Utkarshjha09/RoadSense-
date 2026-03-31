@@ -52,6 +52,24 @@ def get_queue_name() -> str:
     return os.getenv("EVENT_QUEUE_NAME", "roadsense:events").strip() or "roadsense:events"
 
 
+def get_queue_max_length() -> int:
+    raw = os.getenv("QUEUE_MAX_LENGTH", "5000").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 5000
+    return max(100, min(value, 200000))
+
+
+def get_worker_batch_size() -> int:
+    raw = os.getenv("WORKER_BATCH_SIZE", "50").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 50
+    return max(1, min(value, 500))
+
+
 def get_model_h5_url() -> str:
     return os.getenv("MODEL_H5_URL", "").strip()
 
