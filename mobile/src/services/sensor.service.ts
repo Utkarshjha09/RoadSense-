@@ -83,6 +83,7 @@ export class SensorService {
     private lastHandledPredictionEventId: string | null = null;
     private lastQueueWarningAt = 0;
     private lastQueueWarningMessage = '';
+    private lastPredictionPollAt = 0;
 
     constructor(
         onPrediction?: (prediction: PredictionResult) => void,
@@ -217,6 +218,7 @@ export class SensorService {
         this.onReading?.(reading);
 
         void this.queueCloudReading(reading);
+        void this.maybePollCloudPrediction();
 
         if (hasValidCoordinates(reading.latitude, reading.longitude)) {
             this.currentLocation = {
@@ -231,6 +233,15 @@ export class SensorService {
         if (this.logBuffer.length >= 40) {
             await this.flushLogs();
         }
+    }
+
+    private async maybePollCloudPrediction(): Promise<void> {
+        const now = Date.now();
+        if (now - this.lastPredictionPollAt < 1500) {
+            return;
+        }
+        this.lastPredictionPollAt = now;
+        await this.pullLatestCloudPrediction();
     }
 
     private async queueCloudReading(reading: CombinedReading): Promise<void> {
@@ -289,11 +300,13 @@ export class SensorService {
 
     private async pullLatestCloudPrediction(): Promise<void> {
         if (!this.currentDeviceId) return;
-        const items = await fetchLatestPredictions(20, {
+        const scopedItems = await fetchLatestPredictions(20, {
             deviceId: this.currentDeviceId,
             source: this.currentSource,
         });
-        const latest = items[0];
+        const latest =
+            scopedItems[0]
+            ?? (await fetchLatestPredictions(50)).find((item) => item.device_id === this.currentDeviceId);
         if (!latest || latest.event_id === this.lastHandledPredictionEventId) {
             return;
         }
