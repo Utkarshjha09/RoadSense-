@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 
 from app.core.db import close_pool, run_schema_migrations
@@ -10,7 +11,13 @@ from app.services.prediction_store import upsert_prediction
 
 
 def run_forever() -> None:
-    run_schema_migrations()
+    skip_worker_migrations = os.getenv("WORKER_SKIP_DB_MIGRATIONS", "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if not skip_worker_migrations:
+        run_schema_migrations()
     print("[worker] started, waiting for queued events...")
 
     while True:

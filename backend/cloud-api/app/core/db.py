@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import time
+
 from psycopg import Error as PsycopgError
+from psycopg.errors import DeadlockDetected
 from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
@@ -31,17 +34,27 @@ def close_pool() -> None:
 
 
 def run_schema_migrations() -> None:
-    try:
-        pool = get_pool()
-        with pool.connection() as conn:
-            _create_sensor_events_table(conn)
-            _create_predictions_table(conn)
-            _create_training_samples_table(conn)
-            conn.commit()
-    except PsycopgError as exc:
-        raise RuntimeError(
-            "Database migration failed. Check DATABASE_URL and ensure schema permissions are correct."
-        ) from exc
+    max_attempts = 5
+    backoff_seconds = 1.5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            pool = get_pool()
+            with pool.connection() as conn:
+                _create_sensor_events_table(conn)
+                _create_predictions_table(conn)
+                _create_training_samples_table(conn)
+                conn.commit()
+            return
+        except DeadlockDetected:
+            if attempt >= max_attempts:
+                raise RuntimeError(
+                    "Database migration deadlocked repeatedly. Retry deploy or disable worker-side migrations."
+                ) from None
+            time.sleep(backoff_seconds * attempt)
+        except PsycopgError as exc:
+            raise RuntimeError(
+                "Database migration failed. Check DATABASE_URL and ensure schema permissions are correct."
+            ) from exc
 
 
 def _create_sensor_events_table(conn: Connection) -> None:
