@@ -84,6 +84,7 @@ export class SensorService {
     private lastQueueWarningAt = 0;
     private lastQueueWarningMessage = '';
     private lastPredictionPollAt = 0;
+    private predictionPollInFlight = false;
 
     constructor(
         onPrediction?: (prediction: PredictionResult) => void,
@@ -237,7 +238,10 @@ export class SensorService {
 
     private async maybePollCloudPrediction(): Promise<void> {
         const now = Date.now();
-        if (now - this.lastPredictionPollAt < 1500) {
+        if (this.predictionPollInFlight) {
+            return;
+        }
+        if (now - this.lastPredictionPollAt < 5000) {
             return;
         }
         this.lastPredictionPollAt = now;
@@ -300,38 +304,41 @@ export class SensorService {
 
     private async pullLatestCloudPrediction(): Promise<void> {
         if (!this.currentDeviceId) return;
-        const scopedItems = await fetchLatestPredictions(20, {
-            deviceId: this.currentDeviceId,
-            source: this.currentSource,
-        });
-        const latest =
-            scopedItems[0]
-            ?? (await fetchLatestPredictions(50)).find((item) => item.device_id === this.currentDeviceId);
-        if (!latest || latest.event_id === this.lastHandledPredictionEventId) {
-            return;
-        }
-        this.lastHandledPredictionEventId = latest.event_id;
+        this.predictionPollInFlight = true;
+        try {
+            const scopedItems = await fetchLatestPredictions(20, {
+                deviceId: this.currentDeviceId,
+                source: this.currentSource,
+            });
+            const latest = scopedItems[0];
+            if (!latest || latest.event_id === this.lastHandledPredictionEventId) {
+                return;
+            }
+            this.lastHandledPredictionEventId = latest.event_id;
 
-        const classId = latest.predicted_type === 'POTHOLE' ? 1 : latest.predicted_type === 'SPEED_BUMP' ? 2 : 0;
-        const className = classId === 1 ? 'Pothole' : classId === 2 ? 'Speed Bump' : 'Smooth';
-        const confidence = Math.max(0, Math.min(100, latest.confidence * 100));
-        const prediction: PredictionResult = {
-            classId,
-            className,
-            confidence,
-            probabilities: {
-                smooth: classId === 0 ? confidence : 0,
-                pothole: classId === 1 ? confidence : 0,
-                speedBump: classId === 2 ? confidence : 0,
-            },
-            latitude: Number(latest.lat || this.currentLocation.latitude),
-            longitude: Number(latest.lng || this.currentLocation.longitude),
-            timestamp: Date.parse(latest.created_at) || Date.now(),
-        };
+            const classId = latest.predicted_type === 'POTHOLE' ? 1 : latest.predicted_type === 'SPEED_BUMP' ? 2 : 0;
+            const className = classId === 1 ? 'Pothole' : classId === 2 ? 'Speed Bump' : 'Smooth';
+            const confidence = Math.max(0, Math.min(100, latest.confidence * 100));
+            const prediction: PredictionResult = {
+                classId,
+                className,
+                confidence,
+                probabilities: {
+                    smooth: classId === 0 ? confidence : 0,
+                    pothole: classId === 1 ? confidence : 0,
+                    speedBump: classId === 2 ? confidence : 0,
+                },
+                latitude: Number(latest.lat || this.currentLocation.latitude),
+                longitude: Number(latest.lng || this.currentLocation.longitude),
+                timestamp: Date.parse(latest.created_at) || Date.now(),
+            };
 
-        this.onPrediction?.(prediction);
-        if ((prediction.classId === 1 || prediction.classId === 2) && prediction.confidence > 60) {
-            this.onAnomaly?.(prediction);
+            this.onPrediction?.(prediction);
+            if ((prediction.classId === 1 || prediction.classId === 2) && prediction.confidence > 60) {
+                this.onAnomaly?.(prediction);
+            }
+        } finally {
+            this.predictionPollInFlight = false;
         }
     }
 

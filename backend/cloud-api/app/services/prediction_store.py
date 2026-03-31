@@ -10,6 +10,9 @@ def upsert_prediction(
     predicted_type: str,
     confidence: float,
     model_version: str,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    speed: float | None = None,
 ) -> None:
     pool = get_pool()
     with pool.connection() as conn:
@@ -56,6 +59,57 @@ def upsert_prediction(
                     "confidence": confidence,
                 },
             )
+
+            # Mirror high-confidence anomaly predictions into the anomalies table
+            # so web "Anomaly Management" and "Map View" stay populated.
+            if (
+                predicted_type in {"POTHOLE", "SPEED_BUMP"}
+                and confidence >= 0.60
+                and latitude is not None
+                and longitude is not None
+            ):
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO anomalies (
+                            user_id,
+                            type,
+                            severity,
+                            confidence,
+                            location,
+                            speed,
+                            image_url
+                        )
+                        SELECT
+                            NULL,
+                            %(predicted_type)s,
+                            %(confidence)s,
+                            %(confidence)s,
+                            ST_SetSRID(ST_MakePoint(%(longitude)s, %(latitude)s), 4326)::geography,
+                            %(speed)s,
+                            NULL
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM anomalies a
+                            WHERE a.type = %(predicted_type)s
+                              AND a.created_at >= NOW() - INTERVAL '2 minutes'
+                              AND ST_DWithin(
+                                  a.location,
+                                  ST_SetSRID(ST_MakePoint(%(longitude)s, %(latitude)s), 4326)::geography,
+                                  12
+                              )
+                        );
+                        """,
+                        {
+                            "predicted_type": predicted_type,
+                            "confidence": confidence,
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            "speed": speed,
+                        },
+                    )
+                except Exception as exc:
+                    print(f"[prediction_store] anomaly mirror insert skipped: {exc}")
         conn.commit()
 
 

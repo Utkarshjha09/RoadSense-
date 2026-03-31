@@ -12,6 +12,33 @@ def get_database_url() -> str:
     return value
 
 
+def get_db_pool_min_size() -> int:
+    raw = os.getenv("DB_POOL_MIN_SIZE", "1").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 1
+    return max(1, min(value, 20))
+
+
+def get_db_pool_max_size() -> int:
+    raw = os.getenv("DB_POOL_MAX_SIZE", "20").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 20
+    return max(2, min(value, 100))
+
+
+def get_db_pool_timeout_seconds() -> int:
+    raw = os.getenv("DB_POOL_TIMEOUT_SECONDS", "10").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 10
+    return max(3, min(value, 60))
+
+
 def get_redis_url() -> str:
     value = os.getenv("REDIS_URL", "").strip()
     if not value:

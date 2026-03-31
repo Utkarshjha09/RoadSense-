@@ -1,6 +1,7 @@
 import os
 
 from fastapi import APIRouter, Header, HTTPException, Query
+from psycopg_pool import PoolTimeout
 
 from app.models.events import FeedbackLabelRequest, LiveUploadRequest, SyncUploadRequest
 from app.services.event_ingest import persist_event_batch
@@ -26,6 +27,9 @@ def _run_inline_inference(events):
         predicted_type=prediction.predicted_type,
         confidence=prediction.confidence,
         model_version=prediction.model_version,
+        latitude=event.lat,
+        longitude=event.lng,
+        speed=event.speed,
     )
     return 1
 
@@ -48,7 +52,10 @@ def _require_api_secret(x_api_secret: str | None) -> None:
 @router.post("/events/batch")
 def ingest_live_events(payload: LiveUploadRequest, x_api_secret: str | None = Header(default=None)) -> dict[str, object]:
     _require_api_secret(x_api_secret)
-    result = persist_event_batch(payload.events, ingest_mode="live")
+    try:
+        result = persist_event_batch(payload.events, ingest_mode="live")
+    except PoolTimeout as exc:
+        raise HTTPException(status_code=503, detail="Database busy. Retry in a few seconds.") from exc
     inserted_id_set = set(result.inserted_event_ids)
     new_events = [event for event in payload.events if event.event_id in inserted_id_set]
     queue_error = None
@@ -80,7 +87,10 @@ def ingest_live_events(payload: LiveUploadRequest, x_api_secret: str | None = He
 @router.post("/sync/batch")
 def ingest_sync_events(payload: SyncUploadRequest, x_api_secret: str | None = Header(default=None)) -> dict[str, object]:
     _require_api_secret(x_api_secret)
-    result = persist_event_batch(payload.events, ingest_mode="sync")
+    try:
+        result = persist_event_batch(payload.events, ingest_mode="sync")
+    except PoolTimeout as exc:
+        raise HTTPException(status_code=503, detail="Database busy. Retry in a few seconds.") from exc
     inserted_id_set = set(result.inserted_event_ids)
     new_events = [event for event in payload.events if event.event_id in inserted_id_set]
     queue_error = None
@@ -132,12 +142,19 @@ def get_latest_predictions(
             "error": "source must be one of: phone, esp32",
         }
 
-    items = fetch_latest_predictions(
-        limit=limit,
-        predicted_type=normalized_type,
-        device_id=normalized_device_id,
-        source=normalized_source,
-    )
+    try:
+        items = fetch_latest_predictions(
+            limit=limit,
+            predicted_type=normalized_type,
+            device_id=normalized_device_id,
+            source=normalized_source,
+        )
+    except PoolTimeout:
+        return {
+            "ok": True,
+            "count": 0,
+            "items": [],
+        }
     return {
         "ok": True,
         "count": len(items),

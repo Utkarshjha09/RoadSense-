@@ -7,7 +7,12 @@ from psycopg.errors import DeadlockDetected
 from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
-from app.core.settings import get_database_url
+from app.core.settings import (
+    get_database_url,
+    get_db_pool_max_size,
+    get_db_pool_min_size,
+    get_db_pool_timeout_seconds,
+)
 
 _pool: ConnectionPool | None = None
 
@@ -15,11 +20,13 @@ _pool: ConnectionPool | None = None
 def get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
+        min_size = get_db_pool_min_size()
+        max_size = max(min_size, get_db_pool_max_size())
         _pool = ConnectionPool(
             conninfo=get_database_url(),
-            min_size=1,
-            max_size=10,
-            timeout=10,
+            min_size=min_size,
+            max_size=max_size,
+            timeout=get_db_pool_timeout_seconds(),
             # Supabase pooler/PgBouncer can invalidate server-side prepared statements
             # across transaction-pooled connections. Disable auto-prepare in psycopg.
             kwargs={"autocommit": False, "prepare_threshold": None},

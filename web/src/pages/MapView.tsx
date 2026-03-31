@@ -78,6 +78,13 @@ export default function MapView() {
         return new Set(routeStats.matchedAnomalies.map((item) => item.id))
     }, [routeStats])
 
+    const selectedOnCurrentRoute = useMemo(() => {
+        if (!selectedAnomaly) {
+            return false
+        }
+        return routeAnomalyIds.has(selectedAnomaly.id)
+    }, [routeAnomalyIds, selectedAnomaly])
+
     const loadAnomalies = useCallback(async () => {
         try {
             const data = await getAnomaliesInViewport(-90, -180, 90, 180)
@@ -367,6 +374,40 @@ export default function MapView() {
                         </button>
                     </div>
                     {routeError && <p className="text-sm text-rose-300">{routeError}</p>}
+                </div>
+            )}
+
+            {selectedAnomaly && (
+                <div className="absolute top-20 right-4 z-20 w-[360px] max-w-[calc(100%-2rem)] bg-[#072338d9] border border-cyan-300/25 rounded-2xl p-4 space-y-3 backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/85">Anomaly Details</p>
+                            <h3 className="text-lg font-semibold text-white mt-1">
+                                {selectedAnomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
+                            </h3>
+                        </div>
+                        <button
+                            type="button"
+                            className="rs-button-secondary px-3 py-1.5 text-xs"
+                            onClick={() => setSelectedAnomaly(null)}
+                        >
+                            Close
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-[var(--rs-text)]">
+                        <p>Severity: <span className="font-semibold">{(selectedAnomaly.severity * 100).toFixed(0)}%</span></p>
+                        <p>Confidence: <span className="font-semibold">{(selectedAnomaly.confidence * 100).toFixed(0)}%</span></p>
+                        <p>Status: <span className="font-semibold">{selectedAnomaly.verified ? 'Repaired/Verified' : 'Active'}</span></p>
+                        <p>Reports: <span className="font-semibold">{selectedAnomaly.verification_count}</span></p>
+                        <p className="col-span-2">Speed: <span className="font-semibold">{selectedAnomaly.speed ? `${Number(selectedAnomaly.speed).toFixed(1)} km/h` : 'N/A'}</span></p>
+                        <p className="col-span-2">Coordinates: <span className="font-semibold">{selectedAnomaly.latitude.toFixed(6)}, {selectedAnomaly.longitude.toFixed(6)}</span></p>
+                        <p className="col-span-2">Detected At: <span className="font-semibold">{new Date(selectedAnomaly.created_at).toLocaleString()}</span></p>
+                        {routeStats && (
+                            <p className="col-span-2">
+                                Route Match: <span className={`font-semibold ${selectedOnCurrentRoute ? 'text-emerald-300' : 'text-amber-300'}`}>{selectedOnCurrentRoute ? 'On current route' : 'Outside current route'}</span>
+                            </p>
+                        )}
+                    </div>
                 </div>
             )}
 

@@ -45,6 +45,18 @@ type RouteOption = {
     steps: RouteStep[]
 }
 
+type MapAnomalyDetail = {
+    id: string
+    type: 'POTHOLE' | 'SPEED_BUMP'
+    severity: number
+    confidence: number
+    latitude: number
+    longitude: number
+    verified: boolean
+    source: 'route' | 'live'
+    timestamp: string
+}
+
 function parseDistanceToKm(value: string) {
     const normalized = value.toLowerCase().trim()
     const match = normalized.match(/([\d.]+)/)
@@ -227,6 +239,7 @@ export default function DrivingScreen() {
     const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null)
     const [routeAnomalies, setRouteAnomalies] = useState<RouteAnomaly[]>([])
     const [routeError, setRouteError] = useState<string | null>(null)
+    const [selectedMapAnomaly, setSelectedMapAnomaly] = useState<MapAnomalyDetail | null>(null)
     const [analyzingRoute, setAnalyzingRoute] = useState(false)
     const [isNavigating, setIsNavigating] = useState(false)
     const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false)
@@ -706,7 +719,8 @@ export default function DrivingScreen() {
         }
 
         const onAnomaly = (prediction: PredictionResult) => {
-            Vibration.vibrate([0, 200, 100, 200])
+            // Keep tactile alert short and consistent: ~3 seconds.
+            Vibration.vibrate([0, 500, 250, 500, 250, 500, 250, 500], false)
 
             const fallbackLatitude = locationRef.current.latitude
             const fallbackLongitude = locationRef.current.longitude
@@ -745,6 +759,10 @@ export default function DrivingScreen() {
                 severity: detection.severity,
                 confidence: detection.confidence,
                 speed: 0,
+            }).then((result) => {
+                if (!result.success) {
+                    console.warn('Anomaly upload did not persist to Supabase anomalies:', result.error)
+                }
             }).catch((err) => console.error('Upload failed:', err))
         }
 
@@ -1102,6 +1120,20 @@ export default function DrivingScreen() {
                             key={anomaly.id}
                             coordinate={{ latitude: anomaly.latitude, longitude: anomaly.longitude }}
                             title={anomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
+                            description={`Severity ${(anomaly.severity * 100).toFixed(0)}% | Confidence ${(anomaly.confidence * 100).toFixed(0)}%`}
+                            onPress={() =>
+                                setSelectedMapAnomaly({
+                                    id: anomaly.id,
+                                    type: anomaly.type,
+                                    severity: anomaly.severity,
+                                    confidence: anomaly.confidence,
+                                    latitude: anomaly.latitude,
+                                    longitude: anomaly.longitude,
+                                    verified: anomaly.verified,
+                                    source: 'route',
+                                    timestamp: new Date().toISOString(),
+                                })
+                            }
                         >
                             <View style={[styles.anomalyFlag, anomaly.type === 'POTHOLE' ? styles.potholeFlag : styles.bumpFlag]}>
                                 <MaterialIcons
@@ -1121,6 +1153,20 @@ export default function DrivingScreen() {
                             key={`det-${idx}`}
                             coordinate={{ latitude: det.latitude, longitude: det.longitude }}
                             title={det.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
+                            description={`Severity ${(det.severity * 100).toFixed(0)}% | Confidence ${(det.confidence * 100).toFixed(0)}%`}
+                            onPress={() =>
+                                setSelectedMapAnomaly({
+                                    id: `live-${idx}`,
+                                    type: det.type,
+                                    severity: det.severity,
+                                    confidence: det.confidence,
+                                    latitude: det.latitude,
+                                    longitude: det.longitude,
+                                    verified: false,
+                                    source: 'live',
+                                    timestamp: det.timestamp,
+                                })
+                            }
                         >
                             <View style={[styles.anomalyFlag, det.type === 'POTHOLE' ? styles.potholeFlag : styles.bumpFlag]}>
                                 <MaterialIcons
@@ -1135,6 +1181,34 @@ export default function DrivingScreen() {
                         </Marker>
                     ))}
                 </MapView>
+
+                {selectedMapAnomaly && (
+                    <View style={styles.anomalyDetailsCard}>
+                        <View style={styles.anomalyDetailsHeader}>
+                            <Text style={styles.anomalyDetailsTitle}>
+                                {selectedMapAnomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'} details
+                            </Text>
+                            <TouchableOpacity onPress={() => setSelectedMapAnomaly(null)}>
+                                <Text style={styles.anomalyDetailsClose}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.anomalyDetailsLine}>
+                            Source: {selectedMapAnomaly.source === 'live' ? 'Live detection' : 'Route anomaly'}
+                        </Text>
+                        <Text style={styles.anomalyDetailsLine}>
+                            Severity: {(selectedMapAnomaly.severity * 100).toFixed(0)}% | Confidence: {(selectedMapAnomaly.confidence * 100).toFixed(0)}%
+                        </Text>
+                        <Text style={styles.anomalyDetailsLine}>
+                            Status: {selectedMapAnomaly.verified ? 'Verified/Repaired' : 'Active'}
+                        </Text>
+                        <Text style={styles.anomalyDetailsLine}>
+                            Lat/Lng: {selectedMapAnomaly.latitude.toFixed(6)}, {selectedMapAnomaly.longitude.toFixed(6)}
+                        </Text>
+                        <Text style={styles.anomalyDetailsTime}>
+                            {new Date(selectedMapAnomaly.timestamp).toLocaleString()}
+                        </Text>
+                    </View>
+                )}
 
                 <View style={styles.overlay}>
                     {isNavigating ? (
@@ -1478,6 +1552,23 @@ const styles = StyleSheet.create({
     },
     floatingPredictionText: { fontSize: 15, fontWeight: '800', color: '#ffffff', letterSpacing: 0.2 },
     floatingPredictionDetail: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.92)', marginTop: 3 },
+    anomalyDetailsCard: {
+        position: 'absolute',
+        left: 12,
+        right: 12,
+        bottom: 88,
+        backgroundColor: 'rgba(7, 24, 40, 0.95)',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        padding: 10,
+        zIndex: 22,
+    },
+    anomalyDetailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+    anomalyDetailsTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '800' },
+    anomalyDetailsClose: { color: theme.colors.accent, fontSize: 12, fontWeight: '700' },
+    anomalyDetailsLine: { color: theme.colors.muted, fontSize: 12, marginTop: 2 },
+    anomalyDetailsTime: { color: '#9ec3e0', fontSize: 11, marginTop: 6, fontWeight: '600' },
     liveHeadingMarker: {
         width: 38,
         height: 38,

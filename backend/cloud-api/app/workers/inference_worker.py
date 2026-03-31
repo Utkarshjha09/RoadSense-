@@ -33,6 +33,9 @@ def run_forever() -> None:
                 predicted_type=prediction.predicted_type,
                 confidence=prediction.confidence,
                 model_version=prediction.model_version,
+                latitude=event.lat,
+                longitude=event.lng,
+                speed=event.speed,
             )
             print(
                 f"[worker] processed event_id={event.event_id} "
