@@ -4,11 +4,30 @@ from fastapi import APIRouter, Header, HTTPException, Query
 
 from app.models.events import FeedbackLabelRequest, LiveUploadRequest, SyncUploadRequest
 from app.services.event_ingest import persist_event_batch
+from app.services.inference import classify_event
 from app.services.prediction_store import fetch_latest_predictions, update_training_label
+from app.services.prediction_store import upsert_prediction
 from app.services.queue_publish import enqueue_for_inference
 from app.services.test_data import delete_placeholder_test_data, truncate_all_event_data
 
 router = APIRouter(prefix="/v1", tags=["events"])
+
+
+def _run_inline_inference(events):
+    # Fallback path when Redis queue/worker is unavailable.
+    # We infer only the freshest event to keep API latency stable.
+    if not events:
+        return 0
+
+    event = events[-1]
+    prediction = classify_event(event)
+    upsert_prediction(
+        event_id=event.event_id,
+        predicted_type=prediction.predicted_type,
+        confidence=prediction.confidence,
+        model_version=prediction.model_version,
+    )
+    return 1
 
 
 def _dev_endpoints_enabled() -> bool:
@@ -33,11 +52,19 @@ def ingest_live_events(payload: LiveUploadRequest, x_api_secret: str | None = He
     inserted_id_set = set(result.inserted_event_ids)
     new_events = [event for event in payload.events if event.event_id in inserted_id_set]
     queue_error = None
+    inline_predicted = 0
     try:
         enqueued = enqueue_for_inference(new_events) if new_events else 0
     except Exception as exc:
         enqueued = 0
         queue_error = str(exc)
+        try:
+            inline_predicted = _run_inline_inference(new_events)
+        except Exception as inline_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Queue unavailable and inline inference failed: {inline_exc}",
+            ) from inline_exc
     return {
         "ok": True,
         "mode": "live",
@@ -45,6 +72,7 @@ def ingest_live_events(payload: LiveUploadRequest, x_api_secret: str | None = He
         "inserted": result.inserted,
         "duplicates": result.duplicates,
         "enqueued": enqueued,
+        "inline_predicted": inline_predicted,
         "queue_error": queue_error,
     }
 
@@ -56,11 +84,19 @@ def ingest_sync_events(payload: SyncUploadRequest, x_api_secret: str | None = He
     inserted_id_set = set(result.inserted_event_ids)
     new_events = [event for event in payload.events if event.event_id in inserted_id_set]
     queue_error = None
+    inline_predicted = 0
     try:
         enqueued = enqueue_for_inference(new_events) if new_events else 0
     except Exception as exc:
         enqueued = 0
         queue_error = str(exc)
+        try:
+            inline_predicted = _run_inline_inference(new_events)
+        except Exception as inline_exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Queue unavailable and inline inference failed: {inline_exc}",
+            ) from inline_exc
     return {
         "ok": True,
         "mode": "sync",
@@ -68,6 +104,7 @@ def ingest_sync_events(payload: SyncUploadRequest, x_api_secret: str | None = He
         "inserted": result.inserted,
         "duplicates": result.duplicates,
         "enqueued": enqueued,
+        "inline_predicted": inline_predicted,
         "queue_error": queue_error,
     }
 
