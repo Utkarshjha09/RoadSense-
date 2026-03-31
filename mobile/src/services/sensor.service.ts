@@ -289,8 +289,11 @@ export class SensorService {
 
     private async pullLatestCloudPrediction(): Promise<void> {
         if (!this.currentDeviceId) return;
-        const items = await fetchLatestPredictions(30);
-        const latest = items.find((item) => item.device_id === this.currentDeviceId);
+        const items = await fetchLatestPredictions(20, {
+            deviceId: this.currentDeviceId,
+            source: this.currentSource,
+        });
+        const latest = items[0];
         if (!latest || latest.event_id === this.lastHandledPredictionEventId) {
             return;
         }

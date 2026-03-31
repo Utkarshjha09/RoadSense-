@@ -113,17 +113,31 @@ def ingest_sync_events(payload: SyncUploadRequest, x_api_secret: str | None = He
 def get_latest_predictions(
     limit: int = Query(default=20, ge=1, le=200),
     predicted_type: str | None = Query(default=None),
+    device_id: str | None = Query(default=None),
+    source: str | None = Query(default=None),
     x_api_secret: str | None = Header(default=None),
 ) -> dict[str, object]:
     _require_api_secret(x_api_secret)
     normalized_type = predicted_type.strip().upper() if predicted_type else None
+    normalized_device_id = device_id.strip() if device_id else None
+    normalized_source = source.strip().lower() if source else None
     if normalized_type is not None and normalized_type not in {"SMOOTH", "POTHOLE", "SPEED_BUMP"}:
         return {
             "ok": False,
             "error": "predicted_type must be one of: SMOOTH, POTHOLE, SPEED_BUMP",
         }
+    if normalized_source is not None and normalized_source not in {"phone", "esp32"}:
+        return {
+            "ok": False,
+            "error": "source must be one of: phone, esp32",
+        }
 
-    items = fetch_latest_predictions(limit=limit, predicted_type=normalized_type)
+    items = fetch_latest_predictions(
+        limit=limit,
+        predicted_type=normalized_type,
+        device_id=normalized_device_id,
+        source=normalized_source,
+    )
     return {
         "ok": True,
         "count": len(items),

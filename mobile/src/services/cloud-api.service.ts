@@ -197,13 +197,23 @@ export async function flushOfflineEvents(): Promise<void> {
     }
 }
 
-export async function fetchLatestPredictions(limit = 20): Promise<CloudPredictionItem[]> {
+export async function fetchLatestPredictions(
+    limit = 20,
+    opts?: { deviceId?: string; source?: CloudSensorSourceType }
+): Promise<CloudPredictionItem[]> {
     if (!isCloudApiConfigured) return []
     const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)))
+    const query = new URLSearchParams({ limit: String(safeLimit) })
+    if (opts?.deviceId?.trim()) {
+        query.set('device_id', opts.deviceId.trim())
+    }
+    if (opts?.source) {
+        query.set('source', opts.source)
+    }
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
-        const response = await fetch(`${CLOUD_API_BASE}/v1/predictions/latest?limit=${safeLimit}`, {
+        const response = await fetch(`${CLOUD_API_BASE}/v1/predictions/latest?${query.toString()}`, {
             method: 'GET',
             headers: {
                 Accept: 'application/json',

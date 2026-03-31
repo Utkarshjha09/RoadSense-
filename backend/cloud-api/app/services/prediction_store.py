@@ -59,13 +59,27 @@ def upsert_prediction(
         conn.commit()
 
 
-def fetch_latest_predictions(*, limit: int, predicted_type: str | None = None) -> list[dict[str, object]]:
+def fetch_latest_predictions(
+    *,
+    limit: int,
+    predicted_type: str | None = None,
+    device_id: str | None = None,
+    source: str | None = None,
+) -> list[dict[str, object]]:
     pool = get_pool()
-    where_sql = ""
+    where_clauses: list[str] = []
     params: dict[str, object] = {"limit": limit}
     if predicted_type:
-        where_sql = "WHERE p.predicted_type = %(predicted_type)s"
+        where_clauses.append("p.predicted_type = %(predicted_type)s")
         params["predicted_type"] = predicted_type
+    if device_id:
+        where_clauses.append("s.device_id = %(device_id)s")
+        params["device_id"] = device_id
+    if source:
+        where_clauses.append("s.source = %(source)s")
+        params["source"] = source
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     query = f"""
         SELECT
