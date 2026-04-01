@@ -1,5 +1,7 @@
-# Keep EAS upload lean and force clean cloud prebuild
-android/
+# Keep EAS upload lean.
+# Do NOT ignore android/ because this project relies on committed native config
+# that already builds locally. Ignoring it forces cloud prebuild and can produce
+# incompatible autolinked native projects.
 ios/
 node_modules/
 **/node_modules/
