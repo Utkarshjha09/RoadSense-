@@ -44,26 +44,25 @@ export async function getAllAnomalies(filters?: {
     verified?: boolean
     limit?: number
 }) {
-    let query = supabase
-        .from('anomalies')
-        .select('*')
-        .order('created_at', { ascending: false })
+    const { data, error } = await supabase.rpc('get_anomalies_in_viewport', {
+        min_lat: -90,
+        min_lng: -180,
+        max_lat: 90,
+        max_lng: 180,
+        anomaly_type: filters?.type || null,
+    })
 
-    if (filters?.type) {
-        query = query.eq('type', filters.type)
-    }
-
-    if (filters?.verified !== undefined) {
-        query = query.eq('verified', filters.verified)
-    }
-
-    if (filters?.limit) {
-        query = query.limit(filters.limit)
-    }
-
-    const { data, error } = await query
     if (error) throw error
-    return (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude))) as Anomaly[]
+
+    let rows = (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude)))
+    if (filters?.verified !== undefined) {
+        rows = rows.filter((row: any) => Boolean(row.verified) === filters.verified)
+    }
+    rows = rows.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    if (filters?.limit) {
+        rows = rows.slice(0, filters.limit)
+    }
+    return rows as Anomaly[]
 }
 
 export async function getNearbyAnomalies(
@@ -78,32 +77,20 @@ export async function getNearbyAnomalies(
 ) {
     const latDelta = radiusKm / 111
     const lonDelta = radiusKm / (111 * Math.max(Math.cos((centerLat * Math.PI) / 180), 0.01))
-
-    let query = supabase
-        .from('anomalies')
-        .select('*')
-        .gte('latitude', centerLat - latDelta)
-        .lte('latitude', centerLat + latDelta)
-        .gte('longitude', centerLng - lonDelta)
-        .lte('longitude', centerLng + lonDelta)
-        .order('created_at', { ascending: false })
-
-    if (filters?.type) {
-        query = query.eq('type', filters.type)
-    }
-
-    if (filters?.verified !== undefined) {
-        query = query.eq('verified', filters.verified)
-    }
-
-    const preLimit = Math.max((filters?.limit || 500) * 3, 200)
-    query = query.limit(preLimit)
-
-    const { data, error } = await query
+    const { data, error } = await supabase.rpc('get_anomalies_in_viewport', {
+        min_lat: centerLat - latDelta,
+        min_lng: centerLng - lonDelta,
+        max_lat: centerLat + latDelta,
+        max_lng: centerLng + lonDelta,
+        anomaly_type: filters?.type || null,
+    })
     if (error) throw error
 
     const nearby = (data || [])
-        .filter((row) => {
+        .filter((row: any) =>
+            filters?.verified === undefined ? true : Boolean(row.verified) === filters.verified
+        )
+        .filter((row: any) => {
             const lat = Number(row.latitude)
             const lng = Number(row.longitude)
             if (!isValidAnomalyPoint(lat, lng)) {
@@ -113,7 +100,7 @@ export async function getNearbyAnomalies(
         })
 
     const sorted = nearby.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
 
     if (filters?.limit) {
@@ -125,24 +112,32 @@ export async function getNearbyAnomalies(
 
 export async function getRecentImprovedAnomalies(limit = 8, days = 30) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-
-    const { data, error } = await supabase
-        .from('anomalies')
-        .select('*')
-        .eq('verified', true)
-        .gte('updated_at', since)
-        .order('updated_at', { ascending: false })
-        .limit(limit)
-
+    const { data, error } = await supabase.rpc('get_anomalies_in_viewport', {
+        min_lat: -90,
+        min_lng: -180,
+        max_lat: 90,
+        max_lng: 180,
+        anomaly_type: null,
+    })
     if (error) throw error
-    return (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude))) as Anomaly[]
+
+    return (data || [])
+        .filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude)))
+        .filter((row: any) => Boolean(row.verified))
+        .filter((row: any) => new Date(row.updated_at).toISOString() >= since)
+        .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+        .slice(0, limit) as Anomaly[]
 }
 
 // Get anomaly statistics
 export async function getAnomalyStats() {
-    const { data, error } = await supabase
-        .from('anomalies')
-        .select('type, verified, created_at, latitude, longitude')
+    const { data, error } = await supabase.rpc('get_anomalies_in_viewport', {
+        min_lat: -90,
+        min_lng: -180,
+        max_lat: 90,
+        max_lng: 180,
+        anomaly_type: null,
+    })
 
     if (error) throw error
 
@@ -163,19 +158,24 @@ export async function getAnomalyStats() {
 
 export async function getRepairedSummary(days: 7 | 30 | 90 = 30) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-    const { data, error } = await supabase
-        .from('anomalies')
-        .select('type, verified, created_at, latitude, longitude')
-        .gte('created_at', since)
+    const { data, error } = await supabase.rpc('get_anomalies_in_viewport', {
+        min_lat: -90,
+        min_lng: -180,
+        max_lat: 90,
+        max_lng: 180,
+        anomaly_type: null,
+    })
 
     if (error) throw error
 
-    const rows = (data || []).filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude)))
+    const rows = (data || [])
+        .filter((row: any) => isValidAnomalyPoint(Number(row.latitude), Number(row.longitude)))
+        .filter((row: any) => new Date(row.created_at).toISOString() >= since)
     const total = rows.length
-    const repairedRows = rows.filter((row) => row.verified)
+    const repairedRows = rows.filter((row: any) => row.verified)
     const repairedTotal = repairedRows.length
-    const repairedPotholes = repairedRows.filter((row) => row.type === 'POTHOLE').length
-    const repairedSpeedBumps = repairedRows.filter((row) => row.type === 'SPEED_BUMP').length
+    const repairedPotholes = repairedRows.filter((row: any) => row.type === 'POTHOLE').length
+    const repairedSpeedBumps = repairedRows.filter((row: any) => row.type === 'SPEED_BUMP').length
 
     return {
         total,
