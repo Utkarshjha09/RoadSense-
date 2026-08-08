@@ -1,187 +1,188 @@
 # RoadSense
 
-Crowdsourced road quality monitoring using phone sensors + deep learning.
-
-Basically, you drive around with the app running, and it automatically detects potholes and bad roads using your phone's accelerometer/gyroscope. Data gets uploaded to a map so everyone can see where the problem areas are.
+Crowdsourced road-quality monitoring: drive with the app running (phone sensors, or a paired ESP32 device) and it detects potholes and speed bumps in real time using an on-device deep-learning model, then syncs anonymized location + detection data to a shared backend so everyone can see where the problem areas are — and, optionally, so municipal teams get automatically alerted.
 
 ## What it does
 
-- Detects potholes and bumps in real-time using phone sensors (50Hz sampling)
-- Uses a TCN-BiLSTM model running on-device (TFLite)
-- Uploads anonymized GPS + sensor data to Supabase
-- Web dashboard to view/manage detected anomalies
-- Works offline, syncs later
+- Detects potholes and speed bumps in real time from accelerometer/gyroscope data (50 Hz), either from the phone itself or a physical **ESP32** sensor streamed over WebSocket
+- Runs a TCN-BiLSTM model on-device via TFLite (no network round-trip needed to classify a window)
+- Also supports server-side inference (`backend/inference-service`) for heavier/aggregate processing
+- Uploads anonymized GPS + detection data to Supabase (Postgres + PostGIS)
+- Web admin dashboard to view, verify, and manage detections on a map
+- Automated municipal alerting for high-severity, repeatedly-confirmed clusters (n8n workflow)
+- Data-logger mode in the app to capture and label new training samples, and export them as CSV
+- Works with intermittent connectivity — detections and uploads queue locally and sync when back online
 
 ## How it works
 
 ```
-Mobile App (React Native)
-  - Reads accelerometer/gyro at 50Hz
-  - Runs TFLite model locally
-  - Uploads detections with GPS coords
+Mobile App (React Native / Expo)
+  - Reads accelerometer/gyro at 50Hz (phone) or streams from a paired ESP32 over WebSocket
+  - Runs the TFLite model on-device
+  - Uploads detections with GPS coords to Supabase
+  - Logger mode: capture + label windows, export CSV, queue anomaly CSVs for cloud upload
          |
          v
-    Supabase Backend
-  - PostgreSQL + PostGIS
-  - Stores locations + anomaly data
+    Supabase (Postgres + PostGIS)
+  - profiles, anomalies, sensor_events, road_state_clusters
+  - RLS policies, spatial RPCs, OTP table, edge functions (upload-anomaly)
+         |
+         +--> cloud-api (FastAPI, Render)      -- event ingest + orchestration
+         +--> inference-service (FastAPI)       -- server-side model inference
+         +--> otp-service (Node/Express)        -- email OTP + contact form
+         +--> n8n municipal-alert-agent         -- polls high-severity clusters, notifies municipalities
          |
          v
-    Web Dashboard (React)
-  - View map of all detections
-  - Filter/verify anomalies
-  - Basic analytics
+    Web Dashboard (React + Vite)
+  - Map of all detections, verification workflow, reports, user management
 
 ML Pipeline (Python/TensorFlow)
-  - Train TCN-BiLSTM model with geospatial features
-  - 95.89% accuracy on test set
-  - Export to .tflite for mobile
+  - Trains the TCN-BiLSTM model from labeled IMU windows
+  - Exports both a server-side .h5 model and a mobile .tflite model
 ```
-
-
 
 ## Repo structure
 
 ```
-mobile/           - React Native app (Expo)
-  app/            - Screens (auth, driving, logger)
-  src/services/   - Sensor collection, TFLite, Supabase client
+mobile/           React Native app (Expo) — see mobile/README.md
+  app/            Screens: auth, home, driving, map, logger, analytics, settings, notifications, support, account
+  src/services/   Sensor collection (phone + ESP32), TFLite inference, device connection config, Supabase client
 
-web/              - Admin dashboard (React + Vite)
-  src/pages/      - Dashboard, map view, management
-  src/lib/        - Supabase queries
+web/              Admin dashboard (React + Vite) — see web/README.md
+  src/pages/      Login, Dashboard, MapView, AnomalyManagement, Reports, UserManagement, Profile, About
+  src/lib/        Supabase client + queries
 
-backend/          - Supabase config
-  supabase/migrations/  - SQL schema (PostGIS setup)
-  supabase/functions/   - Edge functions
+backend/          Server side of the system — see backend/README.md
+  supabase/       DB schema (migrations/), spatial RPCs, RLS, edge functions
+  cloud-api/      FastAPI ingest/orchestration service (deployed via ../render.yaml)
+  inference-service/  FastAPI service serving the trained model
+  otp-service/    Node/Express email OTP + contact form service
+  n8n/            Municipal alert automation workflow
 
-ml-pipeline/      - Python ML training
-  src/            - train.py, model.py, preprocessing
-  models/final/   - Exported .tflite model
+ml-pipeline/      Python ML training — see ml-pipeline/README.md
+  src/            train.py, model.py, preprocessing, dataset prep scripts
+  models/final/   Exported road_sense_model.h5 (server) and .tflite (mobile)
 
-raw_downloads/    - Training datasets (Kaggle stuff)
+raw_data/, raw_downloads/, models/   Top-level dataset/model working copies (large, gitignored where noted)
+render.yaml        Render deployment config for cloud-api
 ```
-
-
 
 ## Tech stack
 
-**Mobile:** React Native (Expo 54), TypeScript, react-native-fast-tflite, expo-sensors
+**Mobile:** Expo SDK 54, React Native 0.81, TypeScript, Expo Router, `react-native-fast-tflite`, `expo-sensors`/`expo-location`, AsyncStorage, native WebSocket (ESP32)
 
-**Web:** React 18, Vite, Tailwind, Leaflet maps, Recharts, React Query
+**Web:** React 18, Vite 5, TypeScript, Tailwind CSS, Leaflet / `@react-google-maps/api`, Recharts, React Query, Supabase JS (email/password + Google OAuth)
 
-**Backend:** Supabase (PostgreSQL + PostGIS), RLS policies, edge functions
+**Backend:** Supabase (PostgreSQL + PostGIS, RLS, edge functions), FastAPI (cloud-api, inference-service), Node/Express (otp-service), n8n (automation), Redis (cloud-api queueing)
 
-**ML:** Python, TensorFlow/Keras, TCN-BiLSTM model, exports to .tflite
-
-
+**ML:** Python, TensorFlow/Keras, TCN-BiLSTM architecture, exports to `.h5` and `.tflite`
 
 ## Setup
 
 **Requirements:**
 - Node 18+
-- Python 3.9+ (if training model)
+- Python 3.9+ (only needed for ML training or the Python backend services)
 - Supabase account (free tier works)
-- Physical phone (emulators don't have real sensors)
+- Physical Android phone (emulators/Expo Go don't expose real sensors) — optionally an ESP32 for external sensor streaming
 
 **Quick start:**
 
-1. Clone repo
-2. Set up Supabase:
-   - Create project on supabase.com
-   - Run `backend/supabase/migrations/001_setup.sql` in SQL editor
-   - Copy your project URL + anon key
-
+1. Clone repo.
+2. Supabase:
+   - Create a project at supabase.com.
+   - Run `backend/supabase/migrations/*.sql` in order (see `backend/README.md`) in the SQL editor.
+   - Copy the project URL + anon key.
 3. Mobile app:
    ```bash
    cd mobile
    npm install
-   cp .env.example .env  # add your Supabase creds
+   cp .env.example .env   # add Supabase + Google Maps creds
    npx expo run:android
    ```
-
+   To use a physical ESP32 instead of the phone's own sensors, configure it in-app under **Settings → Device Connection** (IP + port) — see `mobile/ESP32_INTEGRATION.md`.
 4. Web dashboard:
    ```bash
    cd web
    npm install
-   cp .env.example .env  # add your Supabase creds
+   cp .env.example .env   # add Supabase + Google Maps creds
    npm run dev
    ```
-
-5. ML (optional - model already included):
+5. Backend services (optional — only needed for cloud/server-side inference, OTP email, or municipal alerts; the mobile app can run standalone against Supabase + on-device TFLite without them):
+   ```bash
+   cd backend/inference-service && pip install -r requirements.txt && uvicorn app.main:app --reload
+   cd backend/cloud-api && docker compose up -d && pip install -r requirements.txt && uvicorn app.main:app --reload
+   cd backend/otp-service && npm install && npm start
+   ```
+6. ML (optional — a trained model is already included in `ml-pipeline/models/final/`):
    ```bash
    cd ml-pipeline
    pip install -r requirements.txt
    python src/train.py
    ```
 
-See [SETUP_GUIDE.md](SETUP_GUIDE.md) for more details.
-
-
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for a detailed walkthrough and [CREDENTIALS_GUIDE.md](CREDENTIALS_GUIDE.md) for where each credential comes from.
 
 ## Components
 
-### Mobile App
-Collects sensor data and runs detection:
-- 50Hz accelerometer/gyro sampling
-- Gravity filtering for clean data
-- TFLite model runs on-device
-- Auto-uploads detections with GPS
-- Logger mode for collecting training data
+### Mobile app
+Field console for collecting sensor data and running detection, plus a full account/admin-lite experience:
+- 50 Hz accelerometer/gyro sampling, phone or ESP32 (WebSocket) source — configurable and testable in-app
+- On-device TFLite inference; auto-uploads detections with GPS
+- Home dashboard shows **real** GPS/sensor connection status (not hardcoded) and real weekly stats
+- Data logger for training-data capture/labeling/export, Analytics screen for trend review
+- Settings (device connection, detection/sync/display preferences), Notifications, Help & Support
+- Auth: email/password + role-based sign-up, 6-digit OTP verification, forgot/reset password — no bypass/demo login path
 
-Main files: [app/driving.tsx](mobile/app/driving.tsx), [sensor.service.ts](mobile/src/services/sensor.service.ts), [tflite.service.ts](mobile/src/services/tflite.service.ts)
+Main files: [app/driving.tsx](mobile/app/driving.tsx), [sensor.service.ts](mobile/src/services/sensor.service.ts), [tflite.service.ts](mobile/src/services/tflite.service.ts), [device-connection.service.ts](mobile/src/services/device-connection.service.ts)
 
 More: [mobile/README.md](mobile/README.md)
 
-### Web Dashboard
+### Web dashboard
 View and manage collected data:
-- Interactive Leaflet map
-- Filter anomalies by type/status/date
-- Verify detections (real vs false positive)
-- User management
+- Interactive map (Leaflet / Google Maps) with anomaly markers
+- Filter/verify anomalies, reports view, admin-only user management
+- Google OAuth or email/password sign-in
 
 More: [web/README.md](web/README.md)
 
 ### Backend
-Supabase (PostgreSQL + PostGIS):
-- Stores anomalies with lat/lng as GEOGRAPHY type
-- Spatial queries: `get_anomalies_in_viewport()`, `get_anomalies_near_point()`
-- RLS policies for data security
-- Auth handled by Supabase
+Supabase is the source of truth; four services sit around it:
+- **supabase/** — Postgres + PostGIS schema, spatial RPCs (`get_anomalies_in_viewport`, `get_anomalies_near_point`), RLS, `upload-anomaly` edge function
+- **cloud-api/** — FastAPI ingest/orchestration service (Render-deployed, see `render.yaml`)
+- **inference-service/** — FastAPI service that loads the trained model and serves predictions from IMU+GPS windows
+- **otp-service/** — Node/Express email OTP + contact-form service
+- **n8n/** — scheduled workflow that alerts municipal authorities about confirmed high-severity clusters
 
 More: [backend/README.md](backend/README.md)
 
-### ML Pipeline
-Train the detection model:
-- TCN-BiLSTM architecture with geospatial features
-- Input: 100 timesteps x 8 features (ax,ay,az,gx,gy,gz,latitude,longitude)
+### ML pipeline
+Trains the detection model:
+- TCN-BiLSTM architecture (dilated Conv1D/TCN blocks + BiLSTM), ~150K params
+- Input: 100-timestep sliding windows of accelerometer/gyro data (see `ml-pipeline/README.md` for the exact current feature set)
 - Output: 3 classes (Smooth, Pothole, SpeedBump)
-- 95.89% accuracy, 100% speed bump detection
-- Trained on 4,676 samples from 6 datasets (250K+ raw points)
-- Exports to .tflite (~9MB)
+- Trained on the Kaggle Pothole Sensor Dataset plus supplementary road-condition data
+- Exports both a `.h5` model (used by `inference-service`) and a `.tflite` model (~9 MB, used by the app)
 
 More: [ml-pipeline/README.md](ml-pipeline/README.md)
 
-
-
 ## Current status
 
-Working:
-- Mobile app collects sensor data + runs detection
-- TFLite model works on-device
-- Data uploads to Supabase with GPS coords
-- Web dashboard shows detections on map
-- Basic filtering/management
+**Working:**
+- Mobile app collects sensor data (phone or ESP32) and runs on-device detection
+- Real (non-hardcoded) GPS/sensor status, device-connection configuration + test-connection flow
+- Data uploads to Supabase with GPS coordinates
+- Web dashboard shows detections on a map with verification workflow
+- Server-side inference service and OTP/contact service
+- Municipal alert automation for confirmed high-severity clusters
 
-TODO:
-- Background data collection (currently need app open)
-- Better analytics/heatmaps
-- Model improvements using prod data
-- Performance tuning
+**TODO:**
+- Background data collection (currently requires the app to be open/foregrounded)
+- Formal accuracy/precision/recall reporting for the current trained model (see `ml-pipeline/ML.md`)
+- Broader analytics/heatmaps in the web dashboard
+- iOS build support (currently Android-first; iOS is intentionally excluded from EAS builds)
 
 ## Notes
 
-- Model is trained on Kaggle + real-world datasets with GPS coordinates, included in `models/final/`
-- Model includes geospatial awareness (latitude/longitude) for location-based detection
-- Need physical device to test - emulators don't have real sensors
-- Check individual READMEs in each folder for more specific info
-- See `SETUP_GUIDE.md` for detailed setup walkthrough
+- A trained model is already included in `ml-pipeline/models/final/` — training from scratch is optional.
+- Sensor features need a physical device — emulators and Expo Go don't expose real accelerometer/gyro/GPS data.
+- Check each subfolder's README for specifics; `SETUP_GUIDE.md` has the full setup walkthrough and `CREDENTIALS_GUIDE.md` explains every credential/env var and where to get it.

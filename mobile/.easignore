@@ -26,9 +26,15 @@ coverage/
 *.apks
 *.keystore
 *.hprof
+android/local.properties
+android/**/local.properties
 android/**/*.cxx/
 android/**/build/
 android/.gradle/
+android_broken_20260401/
+android_broken_*/
+**/problems-report.html
+**/reports/**/*.html
 
 # Logs and local diagnostics
 *.log

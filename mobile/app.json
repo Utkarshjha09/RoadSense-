@@ -66,6 +66,7 @@
           }
         }
       ],
+      "./plugins/withExpoAutolinkingSettings",
       "react-native-fast-tflite",
       "./plugins/withAndroidCleartextTraffic",
       [

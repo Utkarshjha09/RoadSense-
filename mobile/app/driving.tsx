@@ -1,11 +1,31 @@
 import { View, Text, StyleSheet, TouchableOpacity, Vibration, Alert, TextInput, ScrollView } from 'react-native'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MaterialIcons } from '@expo/vector-icons'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
+import {
+    ChevronLeft,
+    ChevronUp,
+    ChevronDown,
+    Navigation,
+    AlertTriangle,
+    Gauge,
+    LocateFixed,
+    CornerUpLeft,
+    CornerUpRight,
+    GitMerge,
+    ArrowUp,
+} from 'lucide-react-native'
 import MapView, { AnimatedRegion, Marker, Polyline } from 'react-native-maps'
 import * as Location from 'expo-location'
 import { CombinedReading, SensorService, SensorSourceType, SensorStatus } from '../src/services/sensor.service'
 import type { PredictionResult } from '../src/services/tflite.service'
 import { appendLoggedSample } from '../src/services/data-logger.service'
+import {
+    buildEsp32WebSocketUrl,
+    getDeviceConnectionConfig,
+    saveDeviceConnectionConfig,
+    setEsp32ConnectionState,
+} from '../src/services/device-connection.service'
 import { getAnomaliesInViewport, uploadAnomaly } from '../src/services/supabase.service'
 import { theme } from '../src/theme'
 import {
@@ -125,7 +145,7 @@ function getRoadConditionCopy(prediction: PredictionResult | null) {
         return {
             title: 'Analyzing Road Surface',
             detail: 'Waiting for live model output from the selected sensor source.',
-            tone: '#8cb6d8',
+            tone: theme.colors.accentIndigo,
         }
     }
 
@@ -133,7 +153,7 @@ function getRoadConditionCopy(prediction: PredictionResult | null) {
         return {
             title: 'Pothole Detected',
             detail: `Confidence ${prediction.confidence.toFixed(1)}%. Slow down and stay centered in lane.`,
-            tone: '#ff9b9b',
+            tone: theme.colors.danger,
         }
     }
 
@@ -141,14 +161,14 @@ function getRoadConditionCopy(prediction: PredictionResult | null) {
         return {
             title: 'Speed Bump Ahead',
             detail: `Confidence ${prediction.confidence.toFixed(1)}%. Ease off throttle for a smoother pass.`,
-            tone: '#ffd98b',
+            tone: theme.colors.accentWarm,
         }
     }
 
     return {
         title: 'Road Running Smooth',
         detail: `Confidence ${prediction.confidence.toFixed(1)}%. Surface looks stable right now.`,
-        tone: '#9ceccb',
+        tone: theme.colors.success,
     }
 }
 
@@ -156,26 +176,26 @@ function getManeuverVisual(instruction: string | null) {
     const normalized = (instruction || '').toLowerCase()
 
     if (normalized.includes('u-turn')) {
-        return { icon: 'u-turn-left' as const, label: 'U-turn' }
+        return { Icon: CornerUpLeft, label: 'U-turn' }
     }
 
     if (normalized.includes('left')) {
-        return { icon: 'turn-left' as const, label: 'Turn left' }
+        return { Icon: CornerUpLeft, label: 'Turn left' }
     }
 
     if (normalized.includes('right')) {
-        return { icon: 'turn-right' as const, label: 'Turn right' }
+        return { Icon: CornerUpRight, label: 'Turn right' }
     }
 
     if (normalized.includes('merge')) {
-        return { icon: 'merge-type' as const, label: 'Merge ahead' }
+        return { Icon: GitMerge, label: 'Merge ahead' }
     }
 
     if (normalized.includes('continue') || normalized.includes('head')) {
-        return { icon: 'north' as const, label: 'Continue ahead' }
+        return { Icon: ArrowUp, label: 'Continue ahead' }
     }
 
-    return { icon: 'navigation' as const, label: 'Follow route' }
+    return { Icon: Navigation, label: 'Follow route' }
 }
 
 function getPredictionBadgeCopy(prediction: PredictionResult | null, isActive: boolean) {
@@ -187,7 +207,7 @@ function getPredictionBadgeCopy(prediction: PredictionResult | null, isActive: b
         return {
             text: 'Waiting for model output',
             detail: 'FastAPI model is warming up',
-            backgroundColor: '#1d4ed8',
+            backgroundColor: theme.colors.accentIndigo,
         }
     }
 
@@ -195,7 +215,7 @@ function getPredictionBadgeCopy(prediction: PredictionResult | null, isActive: b
         return {
             text: 'Pothole Detected',
             detail: `FastAPI confidence ${prediction.confidence.toFixed(1)}%`,
-            backgroundColor: '#dc2626',
+            backgroundColor: theme.colors.danger,
         }
     }
 
@@ -203,14 +223,14 @@ function getPredictionBadgeCopy(prediction: PredictionResult | null, isActive: b
         return {
             text: 'Speed Bump Detected',
             detail: `FastAPI confidence ${prediction.confidence.toFixed(1)}%`,
-            backgroundColor: '#d97706',
+            backgroundColor: theme.colors.accentWarm,
         }
     }
 
     return {
         text: 'Road Smooth',
         detail: `FastAPI confidence ${prediction.confidence.toFixed(1)}%`,
-        backgroundColor: '#10b981',
+        backgroundColor: theme.colors.success,
     }
 }
 
@@ -225,6 +245,7 @@ function hasValidCoordinates(latitude: number, longitude: number) {
 }
 
 export default function DrivingScreen() {
+    const insets = useSafeAreaInsets()
     const [isActive, setIsActive] = useState(false)
     const [modelReady, setModelReady] = useState(false)
     const [detections, setDetections] = useState<any[]>([])
@@ -233,6 +254,7 @@ export default function DrivingScreen() {
     const [sensorData, setSensorData] = useState({ ax: 0, ay: 0, az: 0, gx: 0, gy: 0, gz: 0 })
     const [sensorSource, setSensorSource] = useState<SensorSourceType>('phone')
     const [esp32Url, setEsp32Url] = useState(DEFAULT_ESP32_URL)
+    const [connectionConfigLoaded, setConnectionConfigLoaded] = useState(false)
     const [originInput, setOriginInput] = useState('')
     const [destinationInput, setDestinationInput] = useState('')
     const [routeOptions, setRouteOptions] = useState<RouteOption[]>([])
@@ -682,6 +704,28 @@ export default function DrivingScreen() {
     }, [isActive])
 
     useEffect(() => {
+        void getDeviceConnectionConfig().then((config) => {
+            setSensorSource(config.sensorSource)
+            const url = buildEsp32WebSocketUrl(config)
+            if (url) {
+                setEsp32Url(url)
+            }
+            setConnectionConfigLoaded(true)
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!connectionConfigLoaded) return
+
+        const match = esp32Url.match(/^ws:\/\/([^:/]+)(?::(\d+))?/i)
+        void saveDeviceConnectionConfig({
+            sensorSource,
+            esp32Host: match?.[1] ?? '',
+            esp32Port: match?.[2] ?? '',
+        })
+    }, [sensorSource, esp32Url, connectionConfigLoaded])
+
+    useEffect(() => {
         const onPrediction = (prediction: PredictionResult) => {
             setCurrentPrediction(prediction)
             currentPredictionRef.current = prediction
@@ -806,6 +850,11 @@ export default function DrivingScreen() {
 
         const onStatus = (status: SensorStatus) => {
             setSensorStatus(status)
+            if (status.source === 'esp32') {
+                const mapped: 'idle' | 'connecting' | 'connected' | 'error' =
+                    status.state === 'streaming' ? 'connected' : status.state === 'error' ? 'error' : status.state === 'connecting' ? 'connecting' : 'idle'
+                void setEsp32ConnectionState(mapped)
+            }
         }
 
         sensorServiceRef.current = new SensorService(onPrediction, onAnomaly, onReading, onStatus)
@@ -1088,11 +1137,7 @@ export default function DrivingScreen() {
                             rotation={locationHeading}
                         >
                             <View style={styles.liveHeadingMarker}>
-                                <MaterialIcons
-                                    name="navigation"
-                                    size={32}
-                                    color="#2a7cff"
-                                />
+                                <Navigation size={20} color={theme.colors.accentIndigo} fill={theme.colors.accentIndigo} />
                             </View>
                         </Marker.Animated>
                     )}
@@ -1101,7 +1146,7 @@ export default function DrivingScreen() {
                         <Polyline
                             coordinates={navigationPath}
                             strokeWidth={8}
-                            strokeColor="#8df2ff"
+                            strokeColor={theme.colors.accent}
                             zIndex={6}
                         />
                     )}
@@ -1111,7 +1156,7 @@ export default function DrivingScreen() {
                             key={route.id}
                             coordinates={route.path}
                             strokeWidth={route.id === selectedRouteId ? (isNavigating ? 3 : 6) : 4}
-                            strokeColor={route.id === selectedRouteId ? '#49d3ff' : '#6d7f99'}
+                            strokeColor={route.id === selectedRouteId ? theme.colors.accent : 'rgba(237,242,255,0.28)'}
                         />
                     ))}
 
@@ -1136,11 +1181,11 @@ export default function DrivingScreen() {
                             }
                         >
                             <View style={[styles.anomalyFlag, anomaly.type === 'POTHOLE' ? styles.potholeFlag : styles.bumpFlag]}>
-                                <MaterialIcons
-                                    name={anomaly.type === 'POTHOLE' ? 'warning' : 'speed'}
-                                    size={11}
-                                    color="#ffffff"
-                                />
+                                {anomaly.type === 'POTHOLE' ? (
+                                    <AlertTriangle size={11} color="#ffffff" />
+                                ) : (
+                                    <Gauge size={11} color="#ffffff" />
+                                )}
                                 <Text style={styles.anomalyFlagText}>
                                     {anomaly.type === 'POTHOLE' ? 'POTHOLE' : 'BUMP'}
                                 </Text>
@@ -1169,11 +1214,11 @@ export default function DrivingScreen() {
                             }
                         >
                             <View style={[styles.anomalyFlag, det.type === 'POTHOLE' ? styles.potholeFlag : styles.bumpFlag]}>
-                                <MaterialIcons
-                                    name={det.type === 'POTHOLE' ? 'warning' : 'speed'}
-                                    size={11}
-                                    color="#ffffff"
-                                />
+                                {det.type === 'POTHOLE' ? (
+                                    <AlertTriangle size={11} color="#ffffff" />
+                                ) : (
+                                    <Gauge size={11} color="#ffffff" />
+                                )}
                                 <Text style={styles.anomalyFlagText}>
                                     {det.type === 'POTHOLE' ? 'LIVE POTHOLE' : 'LIVE BUMP'}
                                 </Text>
@@ -1181,6 +1226,13 @@ export default function DrivingScreen() {
                         </Marker>
                     ))}
                 </MapView>
+
+                <TouchableOpacity
+                    style={[styles.backButton, { top: insets.top + 10 }]}
+                    onPress={() => router.replace('/home')}
+                >
+                    <ChevronLeft size={18} color={theme.colors.text} />
+                </TouchableOpacity>
 
                 {selectedMapAnomaly && (
                     <View style={styles.anomalyDetailsCard}>
@@ -1210,14 +1262,14 @@ export default function DrivingScreen() {
                     </View>
                 )}
 
-                <View style={styles.overlay}>
+                <View style={[styles.overlay, { top: insets.top + 58 }]}>
                     {isNavigating ? (
                         <>
                             <View style={styles.navHudCard}>
                                 <View style={styles.navBannerPrimary}>
                                     <View style={styles.navBannerLead}>
                                         <View style={styles.navManeuverIconWrap}>
-                                            <MaterialIcons name={currentManeuver.icon} size={28} color="#ffffff" />
+                                            <currentManeuver.Icon size={24} color="#ffffff" strokeWidth={1.8} />
                                         </View>
                                         <View style={styles.navBannerCopy}>
                                             <Text style={styles.navHudKicker}>Live Navigation</Text>
@@ -1234,7 +1286,11 @@ export default function DrivingScreen() {
                                 </View>
                                 <TouchableOpacity style={styles.drawerToggle} onPress={() => setIsNavDrawerOpen((prev) => !prev)}>
                                     <Text style={styles.drawerToggleText}>{isNavDrawerOpen ? 'Hide details' : 'Show details'}</Text>
-                                    <MaterialIcons name={isNavDrawerOpen ? 'expand-less' : 'expand-more'} size={20} color={theme.colors.text} />
+                                    {isNavDrawerOpen ? (
+                                        <ChevronUp size={17} color={theme.colors.text} />
+                                    ) : (
+                                        <ChevronDown size={17} color={theme.colors.text} />
+                                    )}
                                 </TouchableOpacity>
                                 {isNavDrawerOpen && (
                                     <>
@@ -1297,14 +1353,14 @@ export default function DrivingScreen() {
                                     onChangeText={setOriginInput}
                                     style={styles.input}
                                     placeholder="Origin (address or lat,lng)"
-                                    placeholderTextColor="#7f96ab"
+                                    placeholderTextColor={theme.colors.muted}
                                 />
                                 <TextInput
                                     value={destinationInput}
                                     onChangeText={setDestinationInput}
                                     style={styles.input}
                                     placeholder="Destination (address or lat,lng)"
-                                    placeholderTextColor="#7f96ab"
+                                    placeholderTextColor={theme.colors.muted}
                                 />
                                 <TouchableOpacity
                                     style={[styles.routeButton, analyzingRoute && styles.controlButtonDisabled]}
@@ -1352,14 +1408,14 @@ export default function DrivingScreen() {
                 )}
 
                 <TouchableOpacity
-                    style={[styles.locationButton, { bottom: isNavigating ? 28 : routePanelsVisible ? 438 : 190 }]}
+                    style={[styles.locationButton, { bottom: (isNavigating ? 28 : routePanelsVisible ? 438 : 190) + insets.bottom }]}
                     onPress={handleLocationButtonPress}
                 >
-                    <MaterialIcons name="my-location" size={24} color={theme.colors.text} />
+                    <LocateFixed size={20} color={theme.colors.text} />
                 </TouchableOpacity>
 
                 {routeOptions.length > 0 && !isNavigating && (
-                    <View style={styles.bottomStack}>
+                    <View style={[styles.bottomStack, { bottom: 12 + insets.bottom }]}>
                         <View style={styles.routeStripPanel}>
                             <ScrollView style={styles.bottomPanel} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.routeCards}>
                                 {routeOptions.map((route, index) => {
@@ -1458,7 +1514,7 @@ export default function DrivingScreen() {
                         </View>
                     </View>
 
-                    <View style={styles.bottomControlPanel}>
+                    <View style={[styles.bottomControlPanel, { paddingBottom: 16 + insets.bottom }]}>
                         <Text style={styles.infoLabel}>Sensor Source</Text>
                         <View style={styles.bottomToggleRow}>
                             <TouchableOpacity
@@ -1488,7 +1544,7 @@ export default function DrivingScreen() {
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     placeholder="ws://192.168.4.1:81"
-                                    placeholderTextColor="#7f96ab"
+                                    placeholderTextColor={theme.colors.muted}
                                     style={styles.input}
                                 />
                                 <Text style={styles.helperText}>ESP32 should send JSON like {`{"ax":0.1,"ay":0.0,"az":9.8,"gx":0.01,"gy":0.02,"gz":0.03}`}</Text>
@@ -1518,30 +1574,43 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.bg },
     mapContainer: { flex: 1, position: 'relative' },
     map: { width: '100%', height: '100%' },
-    overlay: { position: 'absolute', top: 50, left: 0, right: 0, paddingHorizontal: 14, gap: 8 },
-    routePlannerCard: { backgroundColor: 'rgba(12, 30, 50, 0.92)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, gap: 8 },
-    routePlannerTitle: { fontSize: 14, color: theme.colors.text, fontWeight: '800' },
-    infoCard: { backgroundColor: 'rgba(12, 30, 50, 0.92)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border },
-    infoLabel: { fontSize: 11, color: theme.colors.muted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '700' },
-    infoText: { fontSize: 14, color: theme.colors.text, fontWeight: '700' },
+    backButton: {
+        position: 'absolute',
+        left: 14,
+        width: 38,
+        height: 38,
+        borderRadius: theme.radius.md,
+        backgroundColor: 'rgba(13,16,24,0.86)',
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 30,
+    },
+    overlay: { position: 'absolute', left: 0, right: 0, paddingHorizontal: 14, gap: 8 },
+    routePlannerCard: { backgroundColor: 'rgba(13,16,24,0.92)', padding: 12, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, gap: 8 },
+    routePlannerTitle: { fontSize: 14, color: theme.colors.text, fontFamily: theme.fonts.bodyBold },
+    infoCard: { backgroundColor: 'rgba(13,16,24,0.92)', padding: 12, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border },
+    infoLabel: { fontSize: 11, color: theme.colors.muted2, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: theme.fonts.bodySemiBold },
+    infoText: { fontSize: 14, color: theme.colors.text, fontFamily: theme.fonts.mono },
     toggleRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-    sourceChip: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: 'rgba(6, 17, 30, 0.65)', alignItems: 'center' },
+    sourceChip: { flex: 1, paddingVertical: 10, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.panel, alignItems: 'center' },
     sourceChipActive: { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
-    sourceChipText: { color: theme.colors.text, fontWeight: '700' },
-    sourceChipTextActive: { color: '#032137' },
-    statusText: { fontSize: 12, color: theme.colors.muted, fontWeight: '600' },
-    input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: theme.colors.text, backgroundColor: 'rgba(6, 17, 30, 0.8)', fontSize: 14 },
-    routeButton: { backgroundColor: theme.colors.accent, borderRadius: 10, alignItems: 'center', paddingVertical: 11 },
-    routeButtonText: { color: '#032137', fontWeight: '800' },
-    routeErrorText: { color: '#ffaaa1', fontSize: 12 },
-    helperText: { color: theme.colors.muted, fontSize: 11, marginTop: 8, lineHeight: 16 },
+    sourceChipText: { color: theme.colors.text, fontFamily: theme.fonts.bodySemiBold },
+    sourceChipTextActive: { color: theme.colors.bg },
+    statusText: { fontSize: 12, color: theme.colors.muted, fontFamily: theme.fonts.body },
+    input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, paddingHorizontal: 12, paddingVertical: 10, color: theme.colors.text, backgroundColor: theme.colors.panel, fontFamily: theme.fonts.body, fontSize: 14 },
+    routeButton: { backgroundColor: theme.colors.accent, borderRadius: theme.radius.md, alignItems: 'center', paddingVertical: 11 },
+    routeButtonText: { color: theme.colors.bg, fontFamily: theme.fonts.bodyBold },
+    routeErrorText: { color: theme.colors.danger, fontFamily: theme.fonts.body, fontSize: 12 },
+    helperText: { color: theme.colors.muted, fontFamily: theme.fonts.body, fontSize: 11, marginTop: 8, lineHeight: 16 },
     floatingPredictionChip: {
         position: 'absolute',
         left: 0,
         right: 0,
         alignSelf: 'center',
         width: 220,
-        borderRadius: 14,
+        borderRadius: theme.radius.lg,
         paddingVertical: 10,
         paddingHorizontal: 14,
         alignItems: 'center',
@@ -1550,34 +1619,34 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.28)',
         zIndex: 25,
     },
-    floatingPredictionText: { fontSize: 15, fontWeight: '800', color: '#ffffff', letterSpacing: 0.2 },
-    floatingPredictionDetail: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.92)', marginTop: 3 },
+    floatingPredictionText: { fontSize: 14, fontFamily: theme.fonts.bodyBold, color: '#ffffff', letterSpacing: 0.2 },
+    floatingPredictionDetail: { fontSize: 11, fontFamily: theme.fonts.body, color: 'rgba(255,255,255,0.92)', marginTop: 3 },
     anomalyDetailsCard: {
         position: 'absolute',
         left: 12,
         right: 12,
         bottom: 88,
-        backgroundColor: 'rgba(7, 24, 40, 0.95)',
-        borderRadius: 12,
+        backgroundColor: 'rgba(13,16,24,0.95)',
+        borderRadius: theme.radius.lg,
         borderWidth: 1,
         borderColor: theme.colors.border,
         padding: 10,
         zIndex: 22,
     },
     anomalyDetailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-    anomalyDetailsTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '800' },
-    anomalyDetailsClose: { color: theme.colors.accent, fontSize: 12, fontWeight: '700' },
-    anomalyDetailsLine: { color: theme.colors.muted, fontSize: 12, marginTop: 2 },
-    anomalyDetailsTime: { color: '#9ec3e0', fontSize: 11, marginTop: 6, fontWeight: '600' },
+    anomalyDetailsTitle: { color: theme.colors.text, fontSize: 14, fontFamily: theme.fonts.bodyBold },
+    anomalyDetailsClose: { color: theme.colors.accent, fontSize: 12, fontFamily: theme.fonts.bodySemiBold },
+    anomalyDetailsLine: { color: theme.colors.muted, fontSize: 12, marginTop: 2, fontFamily: theme.fonts.body },
+    anomalyDetailsTime: { color: theme.colors.muted2, fontSize: 11, marginTop: 6, fontFamily: theme.fonts.bodySemiBold },
     liveHeadingMarker: {
         width: 38,
         height: 38,
         borderRadius: 19,
-        backgroundColor: 'rgba(255,255,255,0.9)',
+        backgroundColor: 'rgba(255,255,255,0.92)',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(42,124,255,0.35)',
+        borderColor: 'rgba(129,140,248,0.35)',
     },
     anomalyFlag: {
         flexDirection: 'row',
@@ -1590,66 +1659,66 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.35)',
     },
     potholeFlag: {
-        backgroundColor: 'rgba(215, 38, 61, 0.95)',
+        backgroundColor: 'rgba(248,113,113,0.95)',
     },
     bumpFlag: {
-        backgroundColor: 'rgba(227, 155, 21, 0.95)',
+        backgroundColor: 'rgba(251,191,36,0.95)',
     },
     anomalyFlagText: {
         color: '#ffffff',
         fontSize: 9,
-        fontWeight: '800',
+        fontFamily: theme.fonts.bodyBold,
         letterSpacing: 0.3,
     },
-    locationButton: { position: 'absolute', right: 16, width: 56, height: 56, borderRadius: 18, backgroundColor: 'rgba(12, 30, 50, 0.94)', borderWidth: 1, borderColor: theme.colors.border, justifyContent: 'center', alignItems: 'center', zIndex: 20 },
-    navHudCard: { backgroundColor: 'rgba(12, 30, 50, 0.9)', padding: 10, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, gap: 8 },
-    navHudKicker: { color: theme.colors.accent, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
-    navHudTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '800', marginTop: 4 },
-    navHudMeta: { color: theme.colors.muted, fontSize: 12, fontWeight: '600' },
-    navBannerPrimary: { backgroundColor: '#0e8058', borderRadius: 14, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+    locationButton: { position: 'absolute', right: 16, width: 50, height: 50, borderRadius: theme.radius.lg, backgroundColor: 'rgba(13,16,24,0.92)', borderWidth: 1, borderColor: theme.colors.border, justifyContent: 'center', alignItems: 'center', zIndex: 20 },
+    navHudCard: { backgroundColor: 'rgba(13,16,24,0.92)', padding: 12, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, gap: 8 },
+    navHudKicker: { color: theme.colors.accent, fontSize: 10, fontFamily: theme.fonts.bodyBold, textTransform: 'uppercase', letterSpacing: 1 },
+    navHudTitle: { color: theme.colors.text, fontSize: 16, fontFamily: theme.fonts.bodyBold, marginTop: 4 },
+    navHudMeta: { color: theme.colors.muted, fontSize: 11, fontFamily: theme.fonts.body },
+    navBannerPrimary: { backgroundColor: 'rgba(52,211,153,0.16)', borderWidth: 1, borderColor: 'rgba(52,211,153,0.3)', borderRadius: theme.radius.lg, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
     navBannerLead: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-    navManeuverIconWrap: { width: 46, height: 46, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+    navManeuverIconWrap: { width: 44, height: 44, borderRadius: 13, backgroundColor: 'rgba(52,211,153,0.28)', alignItems: 'center', justifyContent: 'center' },
     navBannerCopy: { flex: 1 },
-    navBannerTitle: { color: '#ffffff', fontSize: 18, fontWeight: '800' },
-    navBannerSubtitle: { color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600', marginTop: 2 },
-    navBannerSecondary: { backgroundColor: '#11623f', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-    navBannerSecondaryText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+    navBannerTitle: { color: theme.colors.text, fontSize: 17, fontFamily: theme.fonts.display },
+    navBannerSubtitle: { color: theme.colors.muted, fontSize: 12, fontFamily: theme.fonts.body, marginTop: 2 },
+    navBannerSecondary: { backgroundColor: 'rgba(52,211,153,0.1)', borderRadius: theme.radius.md, paddingHorizontal: 10, paddingVertical: 8 },
+    navBannerSecondaryText: { color: theme.colors.text, fontSize: 13, fontFamily: theme.fonts.bodySemiBold },
     drawerToggle: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(8, 20, 34, 0.7)',
+        backgroundColor: theme.colors.panelSoft,
         borderWidth: 1,
-        borderColor: 'rgba(120, 180, 220, 0.14)',
-        borderRadius: 10,
+        borderColor: theme.colors.border,
+        borderRadius: theme.radius.md,
         paddingHorizontal: 10,
         paddingVertical: 7,
     },
-    drawerToggleText: { color: theme.colors.text, fontSize: 13, fontWeight: '700' },
-    navDetailBlock: { backgroundColor: 'rgba(4, 14, 26, 0.48)', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: 'rgba(120, 180, 220, 0.14)' },
-    navDetailLabel: { color: '#7abfe8', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 4 },
-    navDetailTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '800' },
-    navDetailText: { color: theme.colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
-    bottomStack: { position: 'absolute', bottom: 12, left: 12, right: 12, gap: 10 },
-    routeStripPanel: { backgroundColor: '#0b2035ee', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, paddingVertical: 8 },
+    drawerToggleText: { color: theme.colors.text, fontSize: 13, fontFamily: theme.fonts.bodySemiBold },
+    navDetailBlock: { backgroundColor: 'rgba(13,16,24,0.55)', borderRadius: theme.radius.lg, padding: 10, borderWidth: 1, borderColor: theme.colors.border },
+    navDetailLabel: { color: theme.colors.accentIndigo, fontSize: 10, fontFamily: theme.fonts.bodyBold, textTransform: 'uppercase', letterSpacing: 0.9, marginBottom: 4 },
+    navDetailTitle: { color: theme.colors.text, fontSize: 14, fontFamily: theme.fonts.bodyBold },
+    navDetailText: { color: theme.colors.muted, fontSize: 12, fontFamily: theme.fonts.body, lineHeight: 17, marginTop: 4 },
+    bottomStack: { position: 'absolute', left: 12, right: 12, gap: 10 },
+    routeStripPanel: { backgroundColor: 'rgba(13,16,24,0.94)', borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.lg, paddingVertical: 8 },
     bottomPanel: { maxHeight: 154 },
     routeCards: { paddingHorizontal: 0, gap: 10 },
-    routeCard: { width: 220, backgroundColor: '#0b2035ee', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 12 },
+    routeCard: { width: 200, backgroundColor: 'rgba(13,16,24,0.94)', borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.lg, padding: 12 },
     routeCardSelected: { borderColor: theme.colors.accent },
     routeCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-    routeName: { color: theme.colors.text, fontWeight: '800', fontSize: 14 },
-    bestTag: { color: '#032137', backgroundColor: theme.colors.accent, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontSize: 10, fontWeight: '800' },
-    routeMeta: { color: theme.colors.muted, fontSize: 12, marginTop: 2 },
-    summaryPanel: { backgroundColor: '#102943eb', borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 10 },
+    routeName: { color: theme.colors.text, fontFamily: theme.fonts.bodyBold, fontSize: 13 },
+    bestTag: { color: theme.colors.bg, backgroundColor: theme.colors.accent, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, fontSize: 10, fontFamily: theme.fonts.bodyBold },
+    routeMeta: { color: theme.colors.muted, fontSize: 11, marginTop: 2, fontFamily: theme.fonts.body },
+    summaryPanel: { backgroundColor: 'rgba(13,16,24,0.94)', borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.lg, padding: 12 },
     summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 6 },
-    summaryTitle: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-    summaryText: { color: theme.colors.muted, fontSize: 12 },
+    summaryTitle: { color: theme.colors.text, fontSize: 13, fontFamily: theme.fonts.bodyBold },
+    summaryText: { color: theme.colors.muted, fontSize: 12, fontFamily: theme.fonts.body },
     navButton: { backgroundColor: theme.colors.accent, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
     navButtonActive: { backgroundColor: theme.colors.danger },
-    navButtonDisabled: { backgroundColor: '#425873' },
-    navButtonText: { color: '#032137', fontSize: 11, fontWeight: '800' },
-    navigationHint: { color: '#9ceccb', fontSize: 12, fontWeight: '700', marginTop: 8 },
-    navigationIdleText: { color: '#8cb6d8', fontSize: 12, fontWeight: '600', marginTop: 8, lineHeight: 18 },
+    navButtonDisabled: { backgroundColor: theme.colors.muted2 },
+    navButtonText: { color: theme.colors.bg, fontSize: 11, fontFamily: theme.fonts.bodyBold },
+    navigationHint: { color: theme.colors.success, fontSize: 12, fontFamily: theme.fonts.bodySemiBold, marginTop: 8 },
+    navigationIdleText: { color: theme.colors.muted, fontSize: 12, fontFamily: theme.fonts.body, marginTop: 8, lineHeight: 18 },
     statsRow: { flexDirection: 'row', backgroundColor: theme.colors.panel, padding: 16, gap: 16, borderTopWidth: 1, borderTopColor: theme.colors.border },
     bottomControlPanel: {
         backgroundColor: theme.colors.panel,
@@ -1657,16 +1726,15 @@ const styles = StyleSheet.create({
         borderTopColor: theme.colors.border,
         paddingHorizontal: 16,
         paddingTop: 12,
-        paddingBottom: 16,
     },
     bottomToggleRow: { flexDirection: 'row', gap: 8, marginBottom: 8, marginTop: 2 },
     bottomInputLabel: { marginTop: 10 },
     statItem: { flex: 1, alignItems: 'center' },
-    statValue: { fontSize: 22, fontWeight: '800', color: theme.colors.text },
-    statLabel: { fontSize: 12, color: theme.colors.muted, marginTop: 4 },
-    controlButton: { backgroundColor: theme.colors.accent, marginHorizontal: 16, marginTop: 14, marginBottom: 16, padding: 20, borderRadius: 14, alignItems: 'center' },
-    controlButtonInline: { backgroundColor: theme.colors.accent, marginTop: 12, padding: 18, borderRadius: 14, alignItems: 'center' },
+    statValue: { fontSize: 20, fontFamily: theme.fonts.display, color: theme.colors.text },
+    statLabel: { fontSize: 11, color: theme.colors.muted, marginTop: 4, fontFamily: theme.fonts.body },
+    controlButton: { backgroundColor: theme.colors.accent, marginHorizontal: 16, marginTop: 14, marginBottom: 16, padding: 20, borderRadius: theme.radius.lg, alignItems: 'center' },
+    controlButtonInline: { backgroundColor: theme.colors.accent, marginTop: 12, padding: 16, borderRadius: theme.radius.lg, alignItems: 'center' },
     controlButtonActive: { backgroundColor: theme.colors.danger },
-    controlButtonDisabled: { backgroundColor: '#425873' },
-    controlButtonText: { color: '#032137', fontSize: 17, fontWeight: '800', letterSpacing: 0.4 },
+    controlButtonDisabled: { backgroundColor: theme.colors.muted2 },
+    controlButtonText: { color: theme.colors.bg, fontSize: 15, fontFamily: theme.fonts.bodyBold, letterSpacing: 0.4 },
 })

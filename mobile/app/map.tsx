@@ -7,7 +7,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native'
-import { MaterialIcons } from '@expo/vector-icons'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { LocateFixed, Search, ChevronLeft } from 'lucide-react-native'
+import { router } from 'expo-router'
 import MapView, { Marker, Polyline } from 'react-native-maps'
 import * as Location from 'expo-location'
 import { getAnomaliesInViewport } from '../src/services/supabase.service'
@@ -21,6 +23,8 @@ import {
     RouteStats,
 } from '../src/utils/routeQuality'
 import { BrandLoader } from '../components/brand-loader'
+import { BottomNavBar } from '../components/bottom-nav-bar'
+import { Pill } from '../components/ui-kit'
 
 const DEFAULT_COORDS = { latitude: 28.6139, longitude: 77.209 }
 function getMapsApiKey() {
@@ -42,6 +46,7 @@ type RouteOption = {
 }
 
 export default function MapScreen() {
+    const insets = useSafeAreaInsets()
     const [loading, setLoading] = useState(true)
     const [analyzing, setAnalyzing] = useState(false)
     const [coords, setCoords] = useState(DEFAULT_COORDS)
@@ -233,7 +238,7 @@ export default function MapScreen() {
                     <Marker
                         key={anomaly.id}
                         coordinate={{ latitude: anomaly.latitude, longitude: anomaly.longitude }}
-                        pinColor={anomaly.type === 'POTHOLE' ? '#ff4d4f' : '#f5b23a'}
+                        pinColor={anomaly.type === 'POTHOLE' ? theme.colors.danger : theme.colors.accentWarm}
                         title={anomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed bump'}
                         description={anomaly.verified ? 'Reported as filled/verified' : 'Active anomaly'}
                     />
@@ -244,27 +249,38 @@ export default function MapScreen() {
                         key={route.id}
                         coordinates={route.path}
                         strokeWidth={route.id === selectedRouteId ? 6 : 4}
-                        strokeColor={route.id === selectedRouteId ? '#49d3ff' : '#6d7f99'}
+                        strokeColor={route.id === selectedRouteId ? theme.colors.accent : 'rgba(237,242,255,0.28)'}
                     />
                 ))}
             </MapView>
 
-            <View style={styles.topPanel}>
-                <Text style={styles.panelTitle}>Route Quality Planner</Text>
-                <TextInput
-                    value={originInput}
-                    onChangeText={setOriginInput}
-                    style={styles.input}
-                    placeholder="Origin (address or lat,lng)"
-                    placeholderTextColor={theme.colors.muted}
-                />
-                <TextInput
-                    value={destinationInput}
-                    onChangeText={setDestinationInput}
-                    style={styles.input}
-                    placeholder="Destination (address or lat,lng)"
-                    placeholderTextColor={theme.colors.muted}
-                />
+            <View style={[styles.topPanel, { top: insets.top + 10 }]}>
+                <View style={styles.topPanelHeaderRow}>
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/home')}>
+                        <ChevronLeft size={18} color={theme.colors.text} />
+                    </TouchableOpacity>
+                    <Text style={styles.panelTitle}>Route Quality Planner</Text>
+                </View>
+                <View style={styles.inputRow}>
+                    <Search size={14} color={theme.colors.muted2} />
+                    <TextInput
+                        value={originInput}
+                        onChangeText={setOriginInput}
+                        style={styles.input}
+                        placeholder="Origin (address or lat,lng)"
+                        placeholderTextColor={theme.colors.muted}
+                    />
+                </View>
+                <View style={styles.inputRow}>
+                    <Search size={14} color={theme.colors.muted2} />
+                    <TextInput
+                        value={destinationInput}
+                        onChangeText={setDestinationInput}
+                        style={styles.input}
+                        placeholder="Destination (address or lat,lng)"
+                        placeholderTextColor={theme.colors.muted}
+                    />
+                </View>
                 <TouchableOpacity style={styles.primaryButton} onPress={() => void analyzeRoutes()} disabled={analyzing}>
                     <Text style={styles.primaryButtonText}>{analyzing ? 'Analyzing...' : 'Suggest Best Route'}</Text>
                 </TouchableOpacity>
@@ -272,15 +288,15 @@ export default function MapScreen() {
             </View>
 
             <TouchableOpacity
-                style={[styles.locationButton, { bottom: routeOptions.length > 0 ? 316 : 92 }]}
+                style={[styles.locationButton, { bottom: (routeOptions.length > 0 ? 302 : 96) + insets.bottom }]}
                 onPress={centerOnUser}
                 activeOpacity={0.9}
             >
-                <MaterialIcons name="my-location" size={24} color={theme.colors.text} />
+                <LocateFixed size={20} color={theme.colors.text} />
             </TouchableOpacity>
 
             {routeOptions.length > 0 && (
-                <View style={styles.bottomStack}>
+                <View style={[styles.bottomStack, { bottom: 96 + insets.bottom }]}>
                     {selectedRoute && (
                         <View style={styles.summaryPanel}>
                             <Text style={styles.summaryTitle}>Selected Route Stats</Text>
@@ -310,13 +326,17 @@ export default function MapScreen() {
                                 >
                                     <View style={styles.routeCardHeader}>
                                         <Text style={styles.routeName}>Route {index + 1}</Text>
-                                        {isBest && <Text style={styles.bestTag}>Recommended</Text>}
+                                        {isBest && <Pill tone="cyan" size="xs">Recommended</Pill>}
                                     </View>
-                                    <Text style={styles.routeMeta}>{route.distanceText} | {route.durationText}</Text>
-                                    <Text style={styles.routeMeta}>Potholes: {route.stats.potholes}</Text>
-                                    <Text style={styles.routeMeta}>Bumps: {route.stats.speedBumps}</Text>
-                                    <Text style={styles.routeMeta}>Smooth: {route.stats.smoothPercent}%</Text>
-                                    <Text style={styles.routeMeta}>Shock: {route.stats.shockScore}</Text>
+                                    <Text style={styles.routeMeta}>{route.distanceText} &middot; {route.durationText}</Text>
+                                    <View style={styles.qualityBarTrack}>
+                                        <View style={[styles.qualityBarFill, { width: `${route.stats.smoothPercent}%` }]} />
+                                    </View>
+                                    <View style={styles.routeStatsRow}>
+                                        <Text style={styles.routeMeta}><Text style={styles.dangerDot}>&bull;</Text> {route.stats.potholes} potholes</Text>
+                                        <Text style={styles.routeMeta}><Text style={styles.warmDot}>&bull;</Text> {route.stats.speedBumps} bumps</Text>
+                                    </View>
+                                    <Text style={styles.routeMeta}>Smooth {route.stats.smoothPercent}% &middot; Shock {route.stats.shockScore}</Text>
                                     <Text style={styles.routeMeta}>Filled potholes: {route.stats.filledPotholes}</Text>
                                 </TouchableOpacity>
                             )
@@ -324,6 +344,8 @@ export default function MapScreen() {
                     </ScrollView>
                 </View>
             )}
+
+            <BottomNavBar active="map" />
         </View>
     )
 }
@@ -338,53 +360,77 @@ const styles = StyleSheet.create({
     },
     topPanel: {
         position: 'absolute',
-        top: 52,
         left: 12,
         right: 12,
-        backgroundColor: '#0b2035ea',
-        borderRadius: 14,
+        backgroundColor: 'rgba(13,16,24,0.92)',
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        padding: 12,
+        padding: 14,
         gap: 8,
     },
-    panelTitle: {
-        color: theme.colors.text,
-        fontSize: 14,
-        fontWeight: '800',
-        letterSpacing: 0.4,
+    topPanelHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 2,
     },
-    input: {
+    backButton: {
+        width: 30,
+        height: 30,
+        borderRadius: 10,
         backgroundColor: theme.colors.panel,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    panelTitle: {
+        color: theme.colors.text,
+        fontFamily: theme.fonts.bodyBold,
+        fontSize: 14,
+    },
+    inputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: theme.colors.panel,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: theme.radius.md,
         paddingHorizontal: 12,
+    },
+    input: {
+        flex: 1,
         paddingVertical: 10,
         color: theme.colors.text,
-        fontSize: 14,
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
     },
     primaryButton: {
         backgroundColor: theme.colors.accent,
-        borderRadius: 10,
+        borderRadius: theme.radius.md,
         alignItems: 'center',
-        paddingVertical: 11,
+        paddingVertical: 12,
+        marginTop: 2,
     },
     primaryButtonText: {
-        color: '#032137',
-        fontWeight: '800',
+        color: theme.colors.bg,
+        fontFamily: theme.fonts.bodyBold,
+        fontSize: 13,
     },
     errorText: {
-        color: '#ffaaa1',
+        color: theme.colors.danger,
+        fontFamily: theme.fonts.body,
         fontSize: 12,
     },
     locationButton: {
         position: 'absolute',
         right: 16,
-        width: 56,
-        height: 56,
-        borderRadius: 18,
-        backgroundColor: 'rgba(12, 30, 50, 0.94)',
+        width: 48,
+        height: 48,
+        borderRadius: theme.radius.lg,
+        backgroundColor: 'rgba(13,16,24,0.92)',
         borderWidth: 1,
         borderColor: theme.colors.border,
         justifyContent: 'center',
@@ -393,25 +439,25 @@ const styles = StyleSheet.create({
     },
     bottomStack: {
         position: 'absolute',
-        bottom: 12,
         left: 12,
         right: 12,
         gap: 10,
     },
     bottomPanel: {
-        maxHeight: 172,
+        maxHeight: 190,
     },
     routeCards: {
-        paddingHorizontal: 12,
+        paddingHorizontal: 2,
         gap: 10,
     },
     routeCard: {
-        width: 210,
-        backgroundColor: '#0b2035ee',
+        width: 200,
+        backgroundColor: 'rgba(13,16,24,0.94)',
         borderWidth: 1,
         borderColor: theme.colors.border,
-        borderRadius: 12,
+        borderRadius: theme.radius.lg,
         padding: 12,
+        gap: 5,
     },
     routeCardSelected: {
         borderColor: theme.colors.accent,
@@ -420,42 +466,54 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 4,
+        marginBottom: 2,
     },
     routeName: {
         color: theme.colors.text,
-        fontWeight: '800',
-        fontSize: 14,
-    },
-    bestTag: {
-        color: '#032137',
-        backgroundColor: theme.colors.accent,
-        borderRadius: 999,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        fontSize: 10,
-        fontWeight: '800',
+        fontFamily: theme.fonts.bodyBold,
+        fontSize: 13,
     },
     routeMeta: {
         color: theme.colors.muted,
-        fontSize: 12,
-        marginTop: 2,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
+    },
+    routeStatsRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    dangerDot: {
+        color: theme.colors.danger,
+    },
+    warmDot: {
+        color: theme.colors.accentWarm,
+    },
+    qualityBarTrack: {
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: theme.colors.border,
+    },
+    qualityBarFill: {
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: theme.colors.success,
     },
     summaryPanel: {
-        backgroundColor: '#102943eb',
+        backgroundColor: 'rgba(13,16,24,0.94)',
         borderWidth: 1,
         borderColor: theme.colors.border,
-        borderRadius: 12,
-        padding: 10,
+        borderRadius: theme.radius.lg,
+        padding: 12,
     },
     summaryTitle: {
         color: theme.colors.text,
-        fontSize: 13,
-        fontWeight: '800',
+        fontFamily: theme.fonts.bodyBold,
+        fontSize: 12,
         marginBottom: 6,
     },
     summaryText: {
         color: theme.colors.muted,
+        fontFamily: theme.fonts.body,
         fontSize: 12,
     },
     centered: {

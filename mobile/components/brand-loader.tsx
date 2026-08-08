@@ -6,7 +6,7 @@ type BrandLoaderProps = {
   label?: string
 }
 
-const BAR_COLORS = ['#49d3ff', '#43c8f5', '#38b8eb', '#2ea7de']
+const BAR_COLORS = ['#22D3EE', '#3DD9E8', '#57DEDF', '#818CF8']
 
 function AnimatedBar({ index }: { index: number }) {
   const scaleY = useRef(new Animated.Value(1)).current
@@ -85,8 +85,8 @@ const styles = StyleSheet.create({
   },
   label: {
     color: theme.colors.text,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    letterSpacing: 0.3,
   },
 })
 

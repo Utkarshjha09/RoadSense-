@@ -4,22 +4,25 @@ Web-based admin dashboard for managing the RoadSense pothole detection system.
 
 ## Features
 
-- ✅ **Authentication** - Admin-only access with role verification
+- ✅ **Authentication** - Email/password + Google OAuth sign-in via Supabase, admin-gated routes
 - ✅ **Dashboard** - Analytics with stats cards and charts
-- ✅ **Map View** - Interactive Leaflet map with anomaly markers
+- ✅ **Map View** - Interactive Leaflet/Google Maps view with anomaly markers
 - ✅ **Anomaly Management** - Full CRUD with filtering and verification
-- ✅ **User Management** - Role management and user statistics
+- ✅ **Reports** - Reporting view
+- ✅ **User Management** - Role management and user statistics (admin-only)
+- ✅ **Profile / About** - Account details and app info
 - ✅ **Real-time Data** - Live updates from Supabase
 
 ## Tech Stack
 
-- **React 18** + TypeScript
-- **Vite** - Fast build tool
+- **React 18** + TypeScript, React Router 6 (lazy-loaded routes)
+- **Vite 5** - Fast build tool
 - **Tailwind CSS** - Utility-first styling
-- **Leaflet** - Interactive maps
+- **Leaflet** + **react-leaflet**, **@react-google-maps/api** - Interactive maps
 - **Recharts** - Data visualization
-- **Supabase** - Backend and authentication
+- **Supabase** - Backend, auth (email/password + Google OAuth)
 - **React Query** - Data fetching and caching
+- **lucide-react**, **date-fns**
 
 ## Setup
 
@@ -59,11 +62,14 @@ web/
 │   │   │   └── Layout.tsx       # Main layout wrapper
 │   │   └── AuthProvider.tsx     # Auth context
 │   ├── pages/
-│   │   ├── Login.tsx            # Admin login
+│   │   ├── Login.tsx            # Email/password + Google sign-in
 │   │   ├── Dashboard.tsx        # Analytics dashboard
 │   │   ├── MapView.tsx          # Interactive map
-│   │   ├── AnomalyManagement.tsx # CRUD operations
-│   │   └── UserManagement.tsx   # User admin
+│   │   ├── AnomalyManagement.tsx # CRUD operations (route: /anomalies)
+│   │   ├── Reports.tsx          # Reporting view
+│   │   ├── UserManagement.tsx   # User admin (admin-only, wrapped in AdminRoute)
+│   │   ├── Profile.tsx          # Signed-in user's profile
+│   │   └── About.tsx            # About/info page
 │   ├── lib/
 │   │   ├── supabase.ts          # Supabase client
 │   │   └── queries.ts           # Database queries
@@ -107,6 +113,9 @@ Required in `.env`:
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_GOOGLE_MAPS_API_KEY=your-google-maps-key
+VITE_OTP_SERVICE_URL=https://your-otp-service.example.com
+VITE_RECAPTCHA_SITE_KEY=your-recaptcha-site-key
 ```
 
 ## Admin Access

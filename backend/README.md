@@ -1,25 +1,28 @@
 # RoadSense Backend
 
-Supabase-based backend infrastructure for RoadSense pothole detection system.
+Backend infrastructure for RoadSense: a Supabase (Postgres + PostGIS) database at the core, plus four independent services around it. Each service folder has its own README/setup doc — this file is the index.
 
 ## Structure
 
 ```
 backend/
-├── inference-service/
-│   ├── app/
-│   │   └── main.py                # FastAPI cloud inference API
-│   ├── .env.example
-│   └── requirements.txt
-├── supabase/
-│   ├── migrations/
-│   │   └── 001_setup.sql          # Complete database schema
-│   │   └── 004_add_road_state_aggregation.sql  # Raw prediction events + live road-state clusters
-│   └── functions/
-│       └── upload-anomaly/
-│           └── index.ts            # Edge Function for anomaly uploads
-└── BACKEND_SETUP.md                # Step-by-step setup guide
+├── supabase/            Database schema, RPCs, RLS, edge functions (the source of truth)
+├── cloud-api/            FastAPI service: event ingest + orchestration, deployed on Render (see ../render.yaml)
+├── inference-service/    FastAPI service: loads the trained model and serves predictions
+├── otp-service/          Node/Express service: email OTP + contact form
+├── n8n/                  n8n workflow: municipal alert automation
+└── BACKEND_SETUP.md      Step-by-step Supabase setup guide
 ```
+
+## Services at a glance
+
+| Service | Stack | Purpose |
+|---|---|---|
+| `supabase/` | Postgres + PostGIS, SQL, Edge Functions (Deno) | Schema, spatial queries, RLS, auth, `upload-anomaly` edge function |
+| `cloud-api/` | Python, FastAPI, Redis, Postgres | Ingests sensor events (`app/api/events.py`), orchestrates inference + queueing; `/health` reports model readiness. Deployed via `render.yaml` (root of repo) |
+| `inference-service/` | Python, FastAPI, TensorFlow | Loads `ml-pipeline/models/final/road_sense_model.h5`, exposes `POST /predict-window` (100-sample IMU + GPS window → Smooth/Pothole/SpeedBump + confidence), writes results to Supabase |
+| `otp-service/` | Node.js, Express | `POST /otp/send`, `POST /otp/verify` (email OTP via SMTP/Resend, backed by `email_otp_verifications` table), `POST /contact/send` (contact form), reCAPTCHA verification |
+| `n8n/` | n8n workflow JSON | `municipal-alert-agent.workflow.json` — runs every 5 min, calls the `get_municipal_alert_candidates` RPC, and notifies municipal authorities about high-severity clusters |
 
 ## Quick Start
 
@@ -67,6 +70,38 @@ backend/
 
 ### Cloud Inference
 - `inference-service` - FastAPI service that receives IMU + GPS windows, runs the trained model, and stores anomalies in Supabase
+
+## Migrations (backend/supabase/migrations/)
+
+Applied in order:
+
+1. `001_setup.sql` — initial schema (profiles, anomalies, PostGIS, RLS)
+2. `002_add_owner_role.sql` — owner/admin role support
+3. `003_create_email_otp_verifications.sql` — OTP table used by `otp-service`
+4. `004_add_road_state_aggregation.sql` — raw `sensor_events` + live `road_state_clusters`
+5. `005_fix_record_sensor_event_cluster_id_ambiguity.sql` — bugfix
+6. `006_add_municipal_alert_agent.sql` — support for the n8n municipal alert workflow
+7. `007_add_repair_validation_stats.sql` — repair-validation stats
+8. `008_add_window_logs_and_auto_flag_resolution.sql` — sensor window logging + auto-flag resolution ("3000-pass rule")
+
+## Running each service locally
+
+```bash
+# cloud-api — needs local Postgres + Redis (docker-compose.yml provides both)
+cd cloud-api && docker compose up -d && pip install -r requirements.txt && uvicorn app.main:app --reload
+
+# inference-service — needs ml-pipeline/models/final/road_sense_model.h5 present
+cd inference-service && pip install -r requirements.txt && uvicorn app.main:app --reload
+
+# otp-service
+cd otp-service && npm install && npm start
+```
+
+Each service reads its own `.env` (see `.env.example` where present). Key variable names:
+
+- **cloud-api**: `DATABASE_URL`, `REDIS_URL`, `API_SECRET`, `MODEL_PATH`, `CORS_ALLOWED_ORIGINS`, `ENVIRONMENT`, `ALLOW_DEV_ENDPOINTS`
+- **inference-service**: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- **otp-service**: `PORT`, `FRONTEND_URL`/`FRONTEND_URLS`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `OTP_FROM_EMAIL`, `CONTACT_TO_EMAIL`, `RECAPTCHA_SECRET_KEY`, `OTP_EXPIRY_MINUTES`, `RESEND_API_KEY`, `RESEND_API_BASE_URL`
 
 ## API Endpoints
 

@@ -39,9 +39,21 @@ yarn-error.*
 app-example
 
 # generated native folders
+# Keep iOS ignored for now unless you also build iOS in EAS.
 /ios
-/android
+# IMPORTANT: android must be committed for this project to avoid managed prebuild
+# variant-resolution failures in EAS cloud builds.
+# /android
+android/.gradle/
+android/.cxx/
+android/**/.cxx/
+android/build/
+android/**/build/
+android/.externalNativeBuild/
+android/**/.externalNativeBuild/
+android/local.properties
 .gradle-user-home/
+android_broken_*/
 
 # local logs that can contain env values
 eas-log-*.txt

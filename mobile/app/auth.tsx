@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
     View,
     Text,
@@ -6,9 +6,12 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
+    KeyboardAvoidingView,
+    Platform,
 } from 'react-native'
 import * as Linking from 'expo-linking'
 import { router } from 'expo-router'
+import { Eye, EyeOff, Navigation, Shield, Lock, ChevronLeft } from 'lucide-react-native'
 import { isSupabaseConfigured, supabase } from '../src/services/supabase.service'
 import { isOtpConfigured, sendOtp, verifyOtp } from '../src/services/otp.service'
 import {
@@ -24,20 +27,33 @@ import {
 } from '../src/services/mobile-auth.service'
 import { theme } from '../src/theme'
 
-type AuthMode = 'signIn' | 'signUp' | 'otp' | 'recovery'
+type AuthMode = 'signIn' | 'signUp' | 'otp' | 'recovery' | 'forgot'
+type SignUpRole = 'Driver' | 'Fleet Operator' | 'Researcher' | 'Municipality'
+
+const SIGNUP_ROLES: { label: SignUpRole; desc: string }[] = [
+    { label: 'Driver', desc: 'Personal use' },
+    { label: 'Fleet Operator', desc: 'Manage vehicles' },
+    { label: 'Researcher', desc: 'Academic / study' },
+    { label: 'Municipality', desc: 'Public infrastructure' },
+]
 
 export default function AuthScreen() {
     const [mode, setMode] = useState<AuthMode>('signIn')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
-    const [otp, setOtp] = useState('')
+    const [fullName, setFullName] = useState('')
+    const [signUpRole, setSignUpRole] = useState<SignUpRole>('Driver')
+    const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', ''])
+    const otpRefs = useRef<(TextInput | null)[]>([])
     const [showPassword, setShowPassword] = useState(false)
     const [showConfirmPassword, setShowConfirmPassword] = useState(false)
     const [loading, setLoading] = useState(false)
     const [googleLoading, setGoogleLoading] = useState(false)
     const [message, setMessage] = useState('')
     const [error, setError] = useState('')
+
+    const otp = otpDigits.join('')
 
     useEffect(() => {
         void (async () => {
@@ -87,8 +103,25 @@ export default function AuthScreen() {
                 return 'Verify OTP'
             case 'recovery':
                 return 'Reset Password'
+            case 'forgot':
+                return 'Reset password'
             default:
                 return 'Sign In'
+        }
+    }, [mode])
+
+    const subtitle = useMemo(() => {
+        switch (mode) {
+            case 'signUp':
+                return 'Tell us about yourself'
+            case 'otp':
+                return 'We sent a 6-digit code to your address. It expires in 10 minutes.'
+            case 'recovery':
+                return 'Set a new password after opening the recovery link'
+            case 'forgot':
+                return 'Enter your email and we will send you a verification code.'
+            default:
+                return 'Welcome back. Your roads are waiting.'
         }
     }, [mode])
 
@@ -131,7 +164,16 @@ export default function AuthScreen() {
 
         try {
             if (mode === 'signUp') {
-                const { error: signUpError } = await supabase.auth.signUp({ email, password })
+                const { error: signUpError } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: fullName.trim(),
+                            role: signUpRole,
+                        },
+                    },
+                })
                 if (signUpError) {
                     throw signUpError
                 }
@@ -150,7 +192,7 @@ export default function AuthScreen() {
                 await markPasswordLoginPending()
                 await sendOtp(email.trim().toLowerCase(), 'login')
                 setMode('otp')
-                setOtp('')
+                setOtpDigits(['', '', '', '', '', ''])
                 setMessage('OTP sent to your email. Enter it to complete login.')
                 return
             }
@@ -260,44 +302,173 @@ export default function AuthScreen() {
         }
     }
 
+    function handleOtpDigitChange(index: number, value: string) {
+        const digit = value.replace(/[^0-9]/g, '').slice(-1)
+        setOtpDigits((prev) => {
+            const next = [...prev]
+            next[index] = digit
+            return next
+        })
+
+        if (digit && index < 5) {
+            otpRefs.current[index + 1]?.focus()
+        }
+    }
+
+    function handleOtpKeyPress(index: number, key: string) {
+        if (key === 'Backspace' && !otpDigits[index] && index > 0) {
+            otpRefs.current[index - 1]?.focus()
+        }
+    }
+
     function renderPrimaryForm() {
         if (mode === 'otp') {
             return (
                 <View style={styles.form}>
-                    <Text style={styles.label}>Email</Text>
-                    <TextInput
-                        style={[styles.input, styles.readOnlyInput]}
-                        value={email}
-                        editable={false}
-                    />
+                    <View style={styles.iconBadge}>
+                        <Shield size={26} color={theme.colors.accent} strokeWidth={1.5} />
+                    </View>
 
-                    <Text style={styles.label}>OTP</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter 6-digit OTP"
-                        placeholderTextColor={theme.colors.muted}
-                        value={otp}
-                        onChangeText={setOtp}
-                        keyboardType="number-pad"
-                    />
+                    <View style={styles.otpRow}>
+                        {otpDigits.map((digit, index) => (
+                            <TextInput
+                                key={index}
+                                ref={(node) => {
+                                    otpRefs.current[index] = node
+                                }}
+                                style={[styles.otpBox, digit ? styles.otpBoxFilled : null]}
+                                value={digit}
+                                onChangeText={(value) => handleOtpDigitChange(index, value)}
+                                onKeyPress={({ nativeEvent }) => handleOtpKeyPress(index, nativeEvent.key)}
+                                keyboardType="number-pad"
+                                maxLength={1}
+                                textAlign="center"
+                            />
+                        ))}
+                    </View>
 
                     <TouchableOpacity
                         style={[styles.buttonPrimary, loading && styles.buttonDisabled]}
                         onPress={() => void handleVerifyOtp()}
                         disabled={loading}
                     >
-                        <Text style={styles.buttonPrimaryText}>{loading ? 'Verifying...' : 'Verify OTP'}</Text>
+                        <Text style={styles.buttonPrimaryText}>{loading ? 'Verifying...' : 'Verify'}</Text>
                     </TouchableOpacity>
 
+                    <Text style={styles.switchText}>
+                        {"Didn't get it? "}
+                        <Text
+                            style={styles.switchTextAccent}
+                            onPress={() => {
+                                void sendOtp(email.trim().toLowerCase(), 'login')
+                                setMessage('A fresh OTP has been sent to your email.')
+                            }}
+                        >
+                            Resend code
+                        </Text>
+                    </Text>
+                </View>
+            )
+        }
+
+        if (mode === 'forgot') {
+            return (
+                <View style={styles.form}>
+                    <View style={[styles.iconBadge, styles.iconBadgeIndigo]}>
+                        <Lock size={26} color={theme.colors.accentIndigo} strokeWidth={1.5} />
+                    </View>
+
+                    <Text style={styles.label}>Email address</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="you@example.com"
+                        placeholderTextColor={theme.colors.muted}
+                        value={email}
+                        onChangeText={setEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                    />
+
                     <TouchableOpacity
-                        style={styles.secondaryAction}
-                        onPress={() => {
-                            void sendOtp(email.trim().toLowerCase(), 'login')
-                            setMessage('A fresh OTP has been sent to your email.')
-                        }}
+                        style={[styles.buttonPrimary, styles.buttonIndigo, loading && styles.buttonDisabled]}
+                        onPress={() => void handleSendReset()}
+                        disabled={loading}
                     >
-                        <Text style={styles.secondaryActionText}>Resend OTP</Text>
+                        <Text style={styles.buttonPrimaryText}>{loading ? 'Sending...' : 'Send Reset Code'}</Text>
                     </TouchableOpacity>
+                </View>
+            )
+        }
+
+        if (mode === 'signUp') {
+            return (
+                <View style={styles.form}>
+                    <Text style={styles.label}>Full name</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Alex Kumar"
+                        placeholderTextColor={theme.colors.muted}
+                        value={fullName}
+                        onChangeText={setFullName}
+                    />
+
+                    <Text style={styles.label}>Email</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="you@example.com"
+                        placeholderTextColor={theme.colors.muted}
+                        value={email}
+                        onChangeText={setEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                    />
+
+                    <Text style={styles.label}>Password</Text>
+                    <View style={styles.inputRow}>
+                        <TextInput
+                            style={[styles.input, styles.inputFlex]}
+                            placeholder="Min. 8 characters"
+                            placeholderTextColor={theme.colors.muted}
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry={!showPassword}
+                        />
+                        <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword((value) => !value)}>
+                            {showPassword ? <EyeOff size={17} color={theme.colors.muted} /> : <Eye size={17} color={theme.colors.muted} />}
+                        </TouchableOpacity>
+                    </View>
+
+                    <Text style={[styles.label, styles.roleLabel]}>I am a</Text>
+                    <View style={styles.roleGrid}>
+                        {SIGNUP_ROLES.map((r) => {
+                            const active = r.label === signUpRole
+                            return (
+                                <TouchableOpacity
+                                    key={r.label}
+                                    style={[styles.roleCard, active && styles.roleCardActive]}
+                                    onPress={() => setSignUpRole(r.label)}
+                                >
+                                    <Text style={[styles.roleCardTitle, active && styles.roleCardTitleActive]}>{r.label}</Text>
+                                    <Text style={styles.roleCardDesc}>{r.desc}</Text>
+                                </TouchableOpacity>
+                            )
+                        })}
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.buttonPrimary, loading && styles.buttonDisabled]}
+                        onPress={() => void handleEmailAuth()}
+                        disabled={loading}
+                    >
+                        <Text style={styles.buttonPrimaryText}>{loading ? 'Creating...' : 'Continue'}</Text>
+                    </TouchableOpacity>
+
+                    <Text style={styles.switchText}>
+                        Already have an account?{' '}
+                        <Text style={styles.switchTextAccent} onPress={() => setMode('signIn')}>
+                            Sign in
+                        </Text>
+                    </Text>
                 </View>
             )
         }
@@ -306,32 +477,34 @@ export default function AuthScreen() {
             return (
                 <View style={styles.form}>
                     <Text style={styles.label}>New Password</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter a strong password"
-                        placeholderTextColor={theme.colors.muted}
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry={!showPassword}
-                    />
-
-                    <TouchableOpacity style={styles.inlineAction} onPress={() => setShowPassword((value) => !value)}>
-                        <Text style={styles.secondaryActionText}>{showPassword ? 'Hide Password' : 'Show Password'}</Text>
-                    </TouchableOpacity>
+                    <View style={styles.inputRow}>
+                        <TextInput
+                            style={[styles.input, styles.inputFlex]}
+                            placeholder="Enter a strong password"
+                            placeholderTextColor={theme.colors.muted}
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry={!showPassword}
+                        />
+                        <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword((value) => !value)}>
+                            {showPassword ? <EyeOff size={17} color={theme.colors.muted} /> : <Eye size={17} color={theme.colors.muted} />}
+                        </TouchableOpacity>
+                    </View>
 
                     <Text style={styles.label}>Confirm Password</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Re-enter your password"
-                        placeholderTextColor={theme.colors.muted}
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        secureTextEntry={!showConfirmPassword}
-                    />
-
-                    <TouchableOpacity style={styles.inlineAction} onPress={() => setShowConfirmPassword((value) => !value)}>
-                        <Text style={styles.secondaryActionText}>{showConfirmPassword ? 'Hide Password' : 'Show Password'}</Text>
-                    </TouchableOpacity>
+                    <View style={styles.inputRow}>
+                        <TextInput
+                            style={[styles.input, styles.inputFlex]}
+                            placeholder="Re-enter your password"
+                            placeholderTextColor={theme.colors.muted}
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            secureTextEntry={!showConfirmPassword}
+                        />
+                        <TouchableOpacity style={styles.eyeButton} onPress={() => setShowConfirmPassword((value) => !value)}>
+                            {showConfirmPassword ? <EyeOff size={17} color={theme.colors.muted} /> : <Eye size={17} color={theme.colors.muted} />}
+                        </TouchableOpacity>
+                    </View>
 
                     <TouchableOpacity
                         style={[styles.buttonPrimary, loading && styles.buttonDisabled]}
@@ -358,17 +531,22 @@ export default function AuthScreen() {
                 />
 
                 <Text style={styles.label}>Password</Text>
-                <TextInput
-                    style={styles.input}
-                    placeholder="********"
-                    placeholderTextColor={theme.colors.muted}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                />
+                <View style={styles.inputRow}>
+                    <TextInput
+                        style={[styles.input, styles.inputFlex]}
+                        placeholder="********"
+                        placeholderTextColor={theme.colors.muted}
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPassword}
+                    />
+                    <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword((value) => !value)}>
+                        {showPassword ? <EyeOff size={17} color={theme.colors.muted} /> : <Eye size={17} color={theme.colors.muted} />}
+                    </TouchableOpacity>
+                </View>
 
-                <TouchableOpacity style={styles.inlineAction} onPress={() => setShowPassword((value) => !value)}>
-                    <Text style={styles.secondaryActionText}>{showPassword ? 'Hide Password' : 'Show Password'}</Text>
+                <TouchableOpacity onPress={() => setMode('forgot')} style={styles.forgotLink}>
+                    <Text style={styles.secondaryActionText}>Forgot password?</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -376,66 +554,60 @@ export default function AuthScreen() {
                     onPress={() => void handleEmailAuth()}
                     disabled={loading}
                 >
-                    <Text style={styles.buttonPrimaryText}>
-                        {loading ? 'Loading...' : mode === 'signUp' ? 'Create Account' : 'Sign In'}
-                    </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => setMode(mode === 'signUp' ? 'signIn' : 'signUp')} style={styles.switchButton}>
-                    <Text style={styles.switchText}>
-                        {mode === 'signUp' ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-                    </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => void handleSendReset()} style={styles.inlineAction}>
-                    <Text style={styles.secondaryActionText}>Forgot Password?</Text>
+                    <Text style={styles.buttonPrimaryText}>{loading ? 'Loading...' : 'Sign In'}</Text>
                 </TouchableOpacity>
 
                 <View style={styles.divider}>
                     <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>Social</Text>
+                    <Text style={styles.dividerText}>or</Text>
                     <View style={styles.dividerLine} />
                 </View>
 
                 <TouchableOpacity
-                    style={[styles.quickLoginButton, googleLoading && styles.buttonDisabled]}
+                    style={[styles.socialButton, googleLoading && styles.buttonDisabled]}
                     onPress={() => void handleGoogleAuth()}
                     disabled={googleLoading}
                 >
-                    <Text style={styles.quickLoginText}>{googleLoading ? 'Opening Google...' : 'Continue with Google'}</Text>
+                    <Text style={styles.socialButtonText}>{googleLoading ? 'Opening Google...' : 'Continue with Google'}</Text>
                 </TouchableOpacity>
 
-                <View style={styles.divider}>
-                    <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>Testing</Text>
-                    <View style={styles.dividerLine} />
-                </View>
-
-                <TouchableOpacity style={styles.quickLoginButton} onPress={() => router.replace('/home')}>
-                    <Text style={styles.quickLoginText}>Quick Login (Bypass Auth)</Text>
-                </TouchableOpacity>
-                <Text style={styles.quickLoginNote}>Skip authentication for local testing</Text>
+                <Text style={styles.switchText}>
+                    {"Don't have an account? "}
+                    <Text style={styles.switchTextAccent} onPress={() => setMode('signUp')}>
+                        Create one
+                    </Text>
+                </Text>
             </View>
         )
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <View style={styles.glowOne} />
-            <View style={styles.glowTwo} />
+        <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+                <View style={styles.glowOne} />
+                <View style={styles.glowTwo} />
 
-            <View style={styles.card}>
-                <Text style={styles.kicker}>Road Intelligence</Text>
-                <Text style={styles.title}>RoadSense</Text>
-                <Text style={styles.subtitle}>
-                    {mode === 'otp'
-                        ? 'Email login requires OTP verification'
-                        : mode === 'recovery'
-                            ? 'Set a new password after opening the recovery link'
-                            : 'Crowdsourced road quality monitoring'}
-                </Text>
+                {mode === 'signIn' ? (
+                    <View style={styles.brandRow}>
+                        <View style={styles.brandIcon}>
+                            <Navigation size={15} color={theme.colors.accent} strokeWidth={1.6} />
+                        </View>
+                        <Text style={styles.brandText}>
+                            Road<Text style={styles.brandTextAccent}>Sense</Text>
+                        </Text>
+                    </View>
+                ) : mode !== 'recovery' ? (
+                    <TouchableOpacity style={styles.backRow} onPress={() => setMode('signIn')}>
+                        <ChevronLeft size={20} color={theme.colors.muted} />
+                        <Text style={styles.backText}>Back</Text>
+                    </TouchableOpacity>
+                ) : null}
 
-                <Text style={styles.sectionTitle}>{title}</Text>
+                <Text style={styles.title}>{title === 'Sign In' ? 'Sign in' : title}</Text>
+                <Text style={styles.subtitle}>{subtitle}</Text>
 
                 {message ? <Text style={styles.successText}>{message}</Text> : null}
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -444,120 +616,235 @@ export default function AuthScreen() {
                 ) : null}
 
                 {renderPrimaryForm()}
-            </View>
-        </ScrollView>
+            </ScrollView>
+        </KeyboardAvoidingView>
     )
 }
 
 const styles = StyleSheet.create({
+    flex: {
+        flex: 1,
+        backgroundColor: theme.colors.bg,
+    },
     container: {
         flexGrow: 1,
         backgroundColor: theme.colors.bg,
         justifyContent: 'center',
-        padding: 20,
+        padding: 24,
         position: 'relative',
     },
     glowOne: {
         position: 'absolute',
-        width: 220,
-        height: 220,
+        width: 240,
+        height: 240,
         borderRadius: 999,
-        backgroundColor: '#49d3ff22',
-        top: 60,
-        left: -70,
+        backgroundColor: 'rgba(34,211,238,0.09)',
+        top: 40,
+        left: -80,
     },
     glowTwo: {
         position: 'absolute',
-        width: 210,
-        height: 210,
+        width: 220,
+        height: 220,
         borderRadius: 999,
-        backgroundColor: '#f5b23a1f',
-        bottom: 40,
-        right: -80,
+        backgroundColor: 'rgba(251,191,36,0.07)',
+        bottom: 60,
+        right: -90,
     },
-    card: {
-        backgroundColor: theme.colors.panel,
-        borderRadius: theme.radius.lg,
-        padding: 24,
+    brandRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: 28,
+    },
+    backRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 20,
+        alignSelf: 'flex-start',
+    },
+    backText: {
+        color: theme.colors.muted,
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
+    },
+    iconBadge: {
+        width: 56,
+        height: 56,
+        borderRadius: 18,
+        backgroundColor: 'rgba(34,211,238,0.08)',
         borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    kicker: {
-        color: theme.colors.accent,
-        fontSize: 12,
-        textTransform: 'uppercase',
-        letterSpacing: 2,
-        fontWeight: '700',
-        textAlign: 'center',
+        borderColor: 'rgba(34,211,238,0.18)',
+        alignItems: 'center',
+        justifyContent: 'center',
         marginBottom: 6,
     },
-    title: {
-        fontSize: 34,
-        fontWeight: '800',
+    iconBadgeIndigo: {
+        backgroundColor: 'rgba(129,140,248,0.08)',
+        borderColor: 'rgba(129,140,248,0.18)',
+    },
+    otpRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 4,
+    },
+    otpBox: {
+        flex: 1,
+        height: 56,
+        borderRadius: theme.radius.md,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.panel,
         color: theme.colors.text,
-        textAlign: 'center',
+        fontFamily: theme.fonts.display,
+        fontSize: 22,
+    },
+    otpBoxFilled: {
+        backgroundColor: 'rgba(34,211,238,0.07)',
+        borderColor: 'rgba(34,211,238,0.32)',
+    },
+    buttonIndigo: {
+        backgroundColor: theme.colors.accentIndigo,
+    },
+    roleLabel: {
+        marginTop: 2,
+        marginBottom: 2,
+    },
+    roleGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+    },
+    roleCard: {
+        width: '47%',
+        borderRadius: theme.radius.md,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.panel,
+        padding: 14,
+    },
+    roleCardActive: {
+        backgroundColor: 'rgba(34,211,238,0.08)',
+        borderColor: 'rgba(34,211,238,0.35)',
+    },
+    roleCardTitle: {
+        color: theme.colors.text,
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 13,
+        marginBottom: 2,
+    },
+    roleCardTitleActive: {
+        color: theme.colors.accent,
+    },
+    roleCardDesc: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
+        fontSize: 10,
+    },
+    brandIcon: {
+        width: 30,
+        height: 30,
+        borderRadius: 10,
+        backgroundColor: 'rgba(34,211,238,0.1)',
+        borderWidth: 1,
+        borderColor: 'rgba(34,211,238,0.2)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    brandText: {
+        fontFamily: theme.fonts.display,
+        fontSize: 17,
+        color: theme.colors.text,
+    },
+    brandTextAccent: {
+        color: theme.colors.accent,
+    },
+    title: {
+        fontFamily: theme.fonts.display,
+        fontSize: 32,
+        color: theme.colors.text,
+        letterSpacing: -0.5,
     },
     subtitle: {
+        fontFamily: theme.fonts.body,
         fontSize: 14,
         color: theme.colors.muted,
-        textAlign: 'center',
         marginTop: 6,
-        marginBottom: 16,
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: '800',
-        color: theme.colors.text,
-        marginBottom: 14,
+        marginBottom: 28,
     },
     form: {
         gap: 14,
     },
     label: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: theme.colors.muted,
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 11,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: theme.colors.muted2,
+        marginBottom: -6,
     },
     input: {
-        backgroundColor: theme.colors.panelSoft,
+        backgroundColor: theme.colors.panel,
         borderRadius: theme.radius.md,
-        padding: 13,
-        fontSize: 16,
+        padding: 14,
+        fontSize: 15,
+        fontFamily: theme.fonts.body,
         color: theme.colors.text,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
+    inputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    inputFlex: {
+        flex: 1,
+        paddingRight: 44,
+    },
+    eyeButton: {
+        position: 'absolute',
+        right: 14,
+        padding: 4,
+    },
     readOnlyInput: {
-        opacity: 0.8,
+        opacity: 0.7,
+    },
+    forgotLink: {
+        alignItems: 'flex-end',
+        marginTop: -4,
     },
     buttonPrimary: {
-        marginTop: 8,
+        marginTop: 4,
         backgroundColor: theme.colors.accent,
         borderRadius: theme.radius.md,
         padding: 15,
         alignItems: 'center',
     },
     buttonPrimaryText: {
-        color: '#032137',
-        fontSize: 16,
-        fontWeight: '800',
+        color: theme.colors.bg,
+        fontSize: 15,
+        fontFamily: theme.fonts.bodyBold,
+        letterSpacing: 0.2,
     },
     buttonDisabled: {
         opacity: 0.6,
     },
-    switchButton: {
-        marginTop: 8,
-        alignItems: 'center',
-    },
     switchText: {
+        textAlign: 'center',
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
+        color: theme.colors.muted,
+    },
+    switchTextAccent: {
         color: theme.colors.accent,
-        fontSize: 14,
-        fontWeight: '600',
+        fontFamily: theme.fonts.bodySemiBold,
     },
     divider: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 8,
+        marginTop: 6,
     },
     dividerLine: {
         flex: 1,
@@ -565,54 +852,48 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.border,
     },
     dividerText: {
-        color: theme.colors.muted,
-        fontSize: 12,
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
         paddingHorizontal: 10,
-        fontWeight: '600',
     },
-    quickLoginButton: {
-        backgroundColor: '#1f3c5b',
+    socialButton: {
+        backgroundColor: theme.colors.panel,
         borderRadius: theme.radius.md,
-        padding: 14,
+        padding: 13,
         alignItems: 'center',
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
-    quickLoginText: {
+    socialButtonText: {
         color: theme.colors.text,
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    quickLoginNote: {
-        color: theme.colors.muted,
-        fontSize: 12,
-        textAlign: 'center',
-        marginTop: 8,
-    },
-    inlineAction: {
-        alignItems: 'flex-end',
+        fontSize: 14,
+        fontFamily: theme.fonts.bodySemiBold,
     },
     secondaryAction: {
         alignItems: 'center',
     },
     secondaryActionText: {
         color: theme.colors.accent,
-        fontSize: 14,
-        fontWeight: '700',
+        fontSize: 13,
+        fontFamily: theme.fonts.bodySemiBold,
     },
     successText: {
-        color: '#9ceccb',
+        color: theme.colors.success,
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
         marginBottom: 12,
-        fontWeight: '600',
     },
     errorText: {
-        color: '#ff9f93',
+        color: theme.colors.danger,
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
         marginBottom: 12,
-        fontWeight: '600',
     },
     warningText: {
-        color: '#f5d88d',
+        color: theme.colors.accentWarm,
+        fontFamily: theme.fonts.body,
+        fontSize: 12,
         marginBottom: 12,
-        fontWeight: '600',
     },
 })

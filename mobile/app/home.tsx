@@ -1,20 +1,37 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert } from 'react-native'
-import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
-import Svg, { Circle, Path, Rect } from 'react-native-svg'
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { router, useFocusEffect } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import * as Location from 'expo-location'
+import { Bell, Settings, Car, Route, MapPin, AlertTriangle, Activity } from 'lucide-react-native'
 import { isSupabaseConfigured, supabase } from '../src/services/supabase.service'
-import { router } from 'expo-router'
 import { theme } from '../src/theme'
-import { clearLoginState } from '../src/services/mobile-auth.service'
-import { sendContactMessage } from '../src/services/contact.service'
+import { getLoggedSamples, LoggedSample } from '../src/services/data-logger.service'
+import {
+    DeviceConnectionConfig,
+    DEFAULT_DEVICE_CONNECTION,
+    Esp32ConnectionState,
+    getDeviceConnectionConfig,
+    getEsp32ConnectionState,
+} from '../src/services/device-connection.service'
+import { BottomNavBar } from '../components/bottom-nav-bar'
+import { Pill } from '../components/ui-kit'
+import { GroupedBarChart, BarSeriesPoint } from '../components/grouped-bar-chart'
+
+const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const GPS_STALE_MS = 2 * 60 * 1000
 
 export default function HomeScreen() {
+    const insets = useSafeAreaInsets()
     const [displayName, setDisplayName] = useState('Explorer')
-    const [contactName, setContactName] = useState('')
-    const [contactEmail, setContactEmail] = useState('')
-    const [contactSubject, setContactSubject] = useState('')
-    const [contactMessage, setContactMessage] = useState('')
-    const [sendingContact, setSendingContact] = useState(false)
+    const [initials, setInitials] = useState('?')
+    const [samples, setSamples] = useState<LoggedSample[]>([])
+    const [gpsStatus, setGpsStatus] = useState<'checking' | 'connected' | 'off' | 'denied'>('checking')
+    const [connection, setConnection] = useState<DeviceConnectionConfig>(DEFAULT_DEVICE_CONNECTION)
+    const [esp32State, setEsp32State] = useState<{ state: Esp32ConnectionState; updatedAt: number | null }>({
+        state: 'idle',
+        updatedAt: null,
+    })
 
     useEffect(() => {
         if (!isSupabaseConfigured) {
@@ -23,8 +40,9 @@ export default function HomeScreen() {
 
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user) {
-                setDisplayName(getDisplayName(session.user))
-                setContactEmail(session.user.email || '')
+                const name = getDisplayName(session.user)
+                setDisplayName(name)
+                setInitials(getInitials(name))
             }
         })
 
@@ -32,208 +50,251 @@ export default function HomeScreen() {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.user) {
-                setDisplayName(getDisplayName(session.user))
-                setContactEmail(session.user.email || '')
+                const name = getDisplayName(session.user)
+                setDisplayName(name)
+                setInitials(getInitials(name))
             }
         })
 
         return () => subscription.unsubscribe()
     }, [])
 
-    async function handleSignOut() {
-        if (!isSupabaseConfigured) {
-            await clearLoginState()
-            router.replace('/auth')
-            return
+    useFocusEffect(
+        useCallback(() => {
+            void getLoggedSamples().then(setSamples)
+            void getDeviceConnectionConfig().then(setConnection)
+            void getEsp32ConnectionState().then(setEsp32State)
+
+            let cancelled = false
+            void (async () => {
+                try {
+                    const servicesEnabled = await Location.hasServicesEnabledAsync()
+                    if (!servicesEnabled) {
+                        if (!cancelled) setGpsStatus('off')
+                        return
+                    }
+                    const { status } = await Location.getForegroundPermissionsAsync()
+                    if (!cancelled) setGpsStatus(status === 'granted' ? 'connected' : 'denied')
+                } catch {
+                    if (!cancelled) setGpsStatus('off')
+                }
+            })()
+
+            return () => {
+                cancelled = true
+            }
+        }, [])
+    )
+
+    const greeting = useMemo(() => {
+        const hour = new Date().getHours()
+        if (hour < 12) return 'Good morning'
+        if (hour < 18) return 'Good afternoon'
+        return 'Good evening'
+    }, [])
+
+    const dateLabel = useMemo(() => formatDateKicker(new Date()), [])
+
+    const gpsLabel =
+        gpsStatus === 'checking' ? 'Checking...' : gpsStatus === 'connected' ? 'Connected' : gpsStatus === 'denied' ? 'No Permission' : 'Off'
+    const gpsColor = gpsStatus === 'connected' ? theme.colors.success : gpsStatus === 'checking' ? theme.colors.muted2 : theme.colors.danger
+
+    const esp32Fresh = esp32State.updatedAt !== null && Date.now() - esp32State.updatedAt < GPS_STALE_MS
+    const esp32Connected = esp32Fresh && esp32State.state === 'connected'
+    const sensorLabel = connection.sensorSource === 'phone' ? 'Phone' : 'ESP32'
+    const sensorSubLabel = connection.sensorSource === 'esp32' ? (esp32Connected ? 'Connected' : 'Not connected') : 'Sensor'
+    const sensorColor = connection.sensorSource === 'phone' ? theme.colors.accentIndigo : esp32Connected ? theme.colors.success : theme.colors.muted
+
+    const todayStats = useMemo(() => {
+        const today = new Date()
+        const todaySamples = samples.filter((sample) => isSameDay(new Date(sample.timestamp), today))
+        return {
+            samples: todaySamples.length,
+            potholes: todaySamples.filter((s) => s.label === 'POTHOLE').length,
+            bumps: todaySamples.filter((s) => s.label === 'SPEED_BUMP').length,
+        }
+    }, [samples])
+
+    const weeklyChart = useMemo<BarSeriesPoint[]>(() => {
+        const days: { date: Date; potholes: number; bumps: number }[] = []
+        for (let i = 6; i >= 0; i -= 1) {
+            const d = new Date()
+            d.setDate(d.getDate() - i)
+            days.push({ date: d, potholes: 0, bumps: 0 })
         }
 
-        await supabase.auth.signOut()
-        await clearLoginState()
-        router.replace('/auth')
-    }
+        samples.forEach((sample) => {
+            const sampleDate = new Date(sample.timestamp)
+            const match = days.find((d) => isSameDay(d.date, sampleDate))
+            if (!match) return
+            if (sample.label === 'POTHOLE') match.potholes += 1
+            if (sample.label === 'SPEED_BUMP') match.bumps += 1
+        })
 
-    async function handleSendContact() {
-        if (!contactName.trim() || !contactEmail.trim() || !contactMessage.trim()) {
-            Alert.alert('Missing details', 'Please enter name, email, and message.')
-            return
-        }
+        return days.map((d) => ({
+            label: DAY_LABELS[d.date.getDay()],
+            values: [
+                { value: d.potholes, color: theme.colors.danger },
+                { value: d.bumps, color: theme.colors.accentWarm },
+            ],
+        }))
+    }, [samples])
 
-        try {
-            setSendingContact(true)
-            await sendContactMessage({
-                name: contactName.trim(),
-                email: contactEmail.trim().toLowerCase(),
-                subject: contactSubject.trim(),
-                message: contactMessage.trim(),
-                source: 'mobile',
-            })
-            setContactMessage('')
-            Alert.alert('Sent', 'Message sent successfully. A confirmation email has been sent to you.')
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to send message'
-            Alert.alert('Send failed', message)
-        } finally {
-            setSendingContact(false)
-        }
-    }
+    const recentDetections = useMemo(() => {
+        return samples
+            .filter((s) => s.label === 'POTHOLE' || s.label === 'SPEED_BUMP')
+            .slice(-5)
+            .reverse()
+    }, [samples])
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-            <View style={styles.glowTop} />
-            <View style={styles.glowBottom} />
+        <View style={styles.screen}>
+            <ScrollView
+                style={styles.container}
+                contentContainerStyle={[styles.content, { paddingTop: insets.top + 14, paddingBottom: 128 }]}
+            >
+                <View style={styles.glowTop} />
+                <View style={styles.glowBottom} />
 
-            <View style={styles.hero}>
-                <View style={styles.heroHeader}>
-                    <View style={styles.heroCopy}>
-                        <Text style={styles.kicker}>RoadSense Command</Text>
-                        <Text style={styles.title}>Mission Control</Text>
-                        <Text style={styles.welcome}>Welcome, {displayName}</Text>
-                        <Text style={styles.heroSubtitle}>
-                            Smart detection, live mapping, and road intelligence in one field console.
-                        </Text>
+                <View style={styles.headerRow}>
+                    <View style={styles.headerCopy}>
+                        <Text style={styles.kicker}>{dateLabel}</Text>
+                        <Text style={styles.title}>{greeting}, {displayName}</Text>
                     </View>
-                    <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
-                        <Text style={styles.signOutText}>Sign Out</Text>
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/notifications')}>
+                            <Bell size={16} color={theme.colors.muted} />
+                            <View style={styles.notifDot} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/settings')}>
+                            <Settings size={16} color={theme.colors.muted} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.avatarButton} onPress={() => router.push('/account')}>
+                            <Text style={styles.avatarButtonText}>{initials}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View style={styles.statusStrip}>
+                    <View style={styles.statusTopRow}>
+                        <View style={styles.statusDotRow}>
+                            <View style={styles.statusDotLive} />
+                            <Text style={styles.statusStripText}>AI Engine Active</Text>
+                        </View>
+                        <Pill tone="cyan" size="xs">Realtime</Pill>
+                    </View>
+                    <View style={styles.statusMiniRow}>
+                        <StatusMini label="Pipeline" value="Active" color={theme.colors.accent} />
+                        <StatusMini label="GPS" value={gpsLabel} color={gpsColor} />
+                        <StatusMini label={sensorSubLabel} value={sensorLabel} color={sensorColor} />
+                    </View>
+                </View>
+
+                <View style={styles.mapCard}>
+                    <View style={styles.mapDots} />
+                    <View style={styles.mapTopRow}>
+                        <View style={styles.mapLocationChip}>
+                            <MapPin size={11} color={theme.colors.accent} />
+                            <Text style={styles.mapLocationText}>Your Area</Text>
+                        </View>
+                        <TouchableOpacity style={styles.mapNavigateButton} onPress={() => router.push('/driving')}>
+                            <Text style={styles.mapNavigateText}>Navigate</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity style={styles.mapOpenLink} onPress={() => router.push('/map')}>
+                        <Route size={13} color={theme.colors.accentIndigo} />
+                        <Text style={styles.mapOpenLinkText}>Open Route Map</Text>
                     </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={styles.heroPanel} onPress={() => router.push('/driving')} activeOpacity={0.92}>
-                    <View style={styles.heroPanelIconWrap}>
-                        <FeatureIcon kind="driving" size={30} color="#9cd9ff" />
-                    </View>
-                    <View style={styles.heroPanelBody}>
-                        <View style={styles.heroPanelTop}>
-                            <Text style={styles.heroPanelTitle}>Start Driving</Text>
-                            <View style={styles.liveBadge}>
-                                <Text style={styles.liveBadgeText}>Live AI</Text>
-                            </View>
+                <View style={styles.quickGrid}>
+                    <TouchableOpacity style={[styles.quickTile, styles.quickTileCyan]} onPress={() => router.push('/driving')} activeOpacity={0.9}>
+                        <Car size={22} color={theme.colors.accent} strokeWidth={1.6} />
+                        <Text style={styles.quickTileTitle}>Start Driving</Text>
+                        <Text style={styles.quickTileSubtitle}>Begin AI detection</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.quickTile, styles.quickTileIndigo]} onPress={() => router.push('/map')} activeOpacity={0.9}>
+                        <Route size={22} color={theme.colors.accentIndigo} strokeWidth={1.6} />
+                        <Text style={styles.quickTileTitle}>Plan Route</Text>
+                        <Text style={styles.quickTileSubtitle}>Find safest path</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Today&apos;s Summary</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                    <SummaryStat label="Samples" value={String(todayStats.samples)} color={theme.colors.text} />
+                    <SummaryStat label="Potholes" value={String(todayStats.potholes)} color={theme.colors.danger} />
+                    <SummaryStat label="Bumps" value={String(todayStats.bumps)} color={theme.colors.accentWarm} />
+                </View>
+
+                <View style={styles.sectionHeader}>
+                    <View style={styles.chartHeaderRow}>
+                        <Text style={styles.sectionTitle}>Weekly Detections</Text>
+                        <View style={styles.legendRow}>
+                            <LegendDot color={theme.colors.danger} label="Potholes" />
+                            <LegendDot color={theme.colors.accentWarm} label="Bumps" />
                         </View>
-                        <Text style={styles.heroPanelSubtitle}>Realtime anomaly detection with mobile sensors and mapped event capture.</Text>
-                    </View>
-                </TouchableOpacity>
-            </View>
-
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Quick Access</Text>
-                <Text style={styles.sectionSubtitle}>Elegant control surfaces for your RoadSense workflow</Text>
-            </View>
-
-            <View style={styles.quickGrid}>
-                <CompactCard
-                    title="Account Security"
-                    subtitle="Profile, password, and identity controls"
-                    badge="Secure"
-                    icon={<FeatureIcon kind="account" size={26} color="#9cd9ff" />}
-                    onPress={() => router.push('/account')}
-                />
-                <CompactCard
-                    title="View Map"
-                    subtitle="Inspect reports and live route context"
-                    badge="GPS"
-                    icon={<FeatureIcon kind="map" size={26} color="#9cd9ff" />}
-                    onPress={() => router.push('/map')}
-                />
-                <CompactCard
-                    title="Data Logger"
-                    subtitle="Capture and label model training windows"
-                    badge="Dataset"
-                    icon={<FeatureIcon kind="logger" size={26} color="#9cd9ff" />}
-                    onPress={() => router.push('/logger')}
-                />
-                <CompactCard
-                    title="Driving Console"
-                    subtitle="Launch live pothole and bump detection"
-                    badge="Realtime"
-                    icon={<FeatureIcon kind="driving" size={26} color="#9cd9ff" />}
-                    onPress={() => router.push('/driving')}
-                />
-            </View>
-
-            <View style={styles.statusCard}>
-                <View style={styles.cardTopRow}>
-                    <Text style={styles.cardTitle}>System Status</Text>
-                    <View style={styles.statusPill}>
-                        <Text style={styles.statusPillText}>Online</Text>
                     </View>
                 </View>
-                <View style={styles.statusList}>
-                    <StatusRow label="AI pipeline" value="Active" />
-                    <StatusRow label="GPS context" value="Connected" />
-                    <StatusRow label="Mobile auth" value={isSupabaseConfigured ? 'Secured' : 'Guest'} />
-                </View>
-            </View>
-
-            <View style={styles.aboutCard}>
-                <Text style={styles.cardTitle}>About Us</Text>
-                <Text style={styles.aboutText}>
-                    RoadSense blends field intelligence, mobile sensing, and anomaly reporting into a cleaner road-safety platform.
-                    Built with a sharp technical edge, the app helps teams detect, log, and review potholes and speed bumps with a
-                    design language shared across mobile and web.
-                </Text>
-            </View>
-
-            <View style={styles.aboutCard}>
-                <Text style={styles.cardTitle}>FAQ & Contact</Text>
-                <View style={styles.faqList}>
-                    <Text style={styles.faqQuestion}>How fast do alerts show on map?</Text>
-                    <Text style={styles.faqAnswer}>Live detections are plotted instantly and synced to cloud in the same run.</Text>
-                    <Text style={styles.faqQuestion}>Will repaired points update automatically?</Text>
-                    <Text style={styles.faqAnswer}>Yes. Validation windows refresh clusters and status after enough vehicle passes.</Text>
+                <View style={styles.chartCard}>
+                    <GroupedBarChart data={weeklyChart} />
                 </View>
 
-                <Text style={styles.contactLabel}>Full Name</Text>
-                <TextInput
-                    style={styles.contactInput}
-                    value={contactName}
-                    onChangeText={setContactName}
-                    placeholder="John Doe"
-                    placeholderTextColor={theme.colors.muted}
-                />
+                <View style={styles.sectionHeader}>
+                    <View style={styles.chartHeaderRow}>
+                        <Text style={styles.sectionTitle}>Recent Detections</Text>
+                        <TouchableOpacity onPress={() => router.push('/logger')}>
+                            <Text style={styles.seeAllText}>See all</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+                <View style={styles.detectionsCard}>
+                    {recentDetections.length === 0 ? (
+                        <View style={styles.emptyDetections}>
+                            <Activity size={18} color={theme.colors.muted2} />
+                            <Text style={styles.emptyDetectionsText}>No detections logged yet. Start driving to collect data.</Text>
+                        </View>
+                    ) : (
+                        recentDetections.map((sample, index) => (
+                            <View key={sample.id}>
+                                {index > 0 ? <View style={styles.detectionDivider} /> : null}
+                                <View style={styles.detectionRow}>
+                                    <View
+                                        style={[
+                                            styles.detectionBar,
+                                            { backgroundColor: sample.label === 'POTHOLE' ? theme.colors.danger : theme.colors.accentWarm },
+                                        ]}
+                                    />
+                                    <View style={styles.detectionBody}>
+                                        <View style={styles.detectionTopRow}>
+                                            <Text style={styles.detectionType}>
+                                                {sample.label === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
+                                            </Text>
+                                            <Pill tone={sample.label === 'POTHOLE' ? 'red' : 'amber'} size="xs">
+                                                {sample.source}
+                                            </Pill>
+                                        </View>
+                                        <Text style={styles.detectionMeta}>{formatRelativeTime(sample.timestamp)}</Text>
+                                    </View>
+                                    <AlertTriangle size={14} color={theme.colors.muted2} />
+                                </View>
+                            </View>
+                        ))
+                    )}
+                </View>
 
-                <Text style={styles.contactLabel}>Email Address</Text>
-                <TextInput
-                    style={styles.contactInput}
-                    value={contactEmail}
-                    onChangeText={setContactEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    placeholder="john@example.com"
-                    placeholderTextColor={theme.colors.muted}
-                />
-
-                <Text style={styles.contactLabel}>Subject</Text>
-                <TextInput
-                    style={styles.contactInput}
-                    value={contactSubject}
-                    onChangeText={setContactSubject}
-                    placeholder="Need to talk"
-                    placeholderTextColor={theme.colors.muted}
-                />
-
-                <Text style={styles.contactLabel}>Your Message</Text>
-                <TextInput
-                    style={[styles.contactInput, styles.contactInputMultiline]}
-                    value={contactMessage}
-                    onChangeText={setContactMessage}
-                    multiline
-                    textAlignVertical="top"
-                    placeholder="Tell us about your requirement..."
-                    placeholderTextColor={theme.colors.muted}
-                />
-
-                <TouchableOpacity
-                    style={[styles.contactButton, sendingContact && styles.contactButtonDisabled]}
-                    onPress={() => void handleSendContact()}
-                    disabled={sendingContact}
-                >
-                    <Text style={styles.contactButtonText}>{sendingContact ? 'Sending...' : 'Send Message'}</Text>
+                <TouchableOpacity style={styles.supportCard} onPress={() => router.push('/support')} activeOpacity={0.9}>
+                    <View style={styles.supportCopy}>
+                        <Text style={styles.supportTitle}>Need help?</Text>
+                        <Text style={styles.supportSubtitle}>FAQ, live chat, and contact support</Text>
+                    </View>
+                    <Pill tone="indigo" size="xs">Help &amp; Support</Pill>
                 </TouchableOpacity>
-            </View>
-
-            <View style={styles.footer}>
-                <Text style={styles.footerText}>All rights reserved to SHADOW</Text>
-            </View>
-        </ScrollView>
+            </ScrollView>
+            <BottomNavBar active="home" />
+        </View>
     )
 }
 
@@ -245,7 +306,7 @@ function getDisplayName(user: any) {
         user?.identities?.[0]?.identity_data?.name
 
     if (typeof fullName === 'string' && fullName.trim()) {
-        return fullName.trim()
+        return fullName.trim().split(/\s+/)[0]
     }
 
     const email = user?.email || ''
@@ -256,107 +317,73 @@ function getDisplayName(user: any) {
     return 'Explorer'
 }
 
-function CompactCard({
-    title,
-    subtitle,
-    badge,
-    icon,
-    onPress,
-}: {
-    title: string
-    subtitle: string
-    badge: string
-    icon: ReactNode
-    onPress: () => void
-}) {
+function getInitials(name: string) {
+    return name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join('') || '?'
+}
+
+function formatDateKicker(date: Date) {
+    return date
+        .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+        .toUpperCase()
+}
+
+function isSameDay(a: Date, b: Date) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+function formatRelativeTime(iso: string) {
+    const diffMs = Date.now() - new Date(iso).getTime()
+    const minutes = Math.max(0, Math.round(diffMs / 60000))
+    if (minutes < 1) return 'Just now'
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.round(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.round(hours / 24)
+    return `${days}d ago`
+}
+
+function StatusMini({ label, value, color }: { label: string; value: string; color: string }) {
     return (
-        <TouchableOpacity style={styles.quickCard} onPress={onPress} activeOpacity={0.92}>
-            <View style={styles.quickCardIcon}>
-                {icon}
-            </View>
-            <View style={styles.quickCardBody}>
-                <View style={styles.menuTopRow}>
-                    <Text style={styles.menuTitle}>{title}</Text>
-                    <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{badge}</Text>
-                    </View>
-                </View>
-                <Text style={styles.menuSubtitle}>{subtitle}</Text>
-            </View>
-        </TouchableOpacity>
+        <View style={styles.statusMiniItem}>
+            <Text style={[styles.statusMiniValue, { color }]}>{value}</Text>
+            <Text style={styles.statusMiniLabel}>{label}</Text>
+        </View>
     )
 }
 
-function FeatureIcon({
-    kind,
-    size,
-    color,
-}: {
-    kind: 'account' | 'map' | 'logger' | 'driving'
-    size: number
-    color: string
-}) {
-    const stroke = color
-    const strokeWidth = 1.9
-
-    if (kind === 'account') {
-        return (
-            <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-                <Circle cx="12" cy="8.2" r="3.2" stroke={stroke} strokeWidth={strokeWidth} />
-                <Path d="M5 18.2c1.5-3.2 4-4.8 7-4.8s5.5 1.6 7 4.8" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
-                <Rect x="2.5" y="2.5" width="19" height="19" rx="6" stroke={stroke} strokeWidth={1.4} opacity={0.55} />
-            </Svg>
-        )
-    }
-
-    if (kind === 'map') {
-        return (
-            <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-                <Path d="M12 20c4-4.4 6-7.1 6-9.7A6 6 0 1 0 6 10.3C6 12.9 8 15.6 12 20Z" stroke={stroke} strokeWidth={strokeWidth} />
-                <Circle cx="12" cy="10.1" r="1.8" fill={stroke} />
-            </Svg>
-        )
-    }
-
-    if (kind === 'logger') {
-        return (
-            <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-                <Rect x="4" y="4" width="16" height="16" rx="3.2" stroke={stroke} strokeWidth={strokeWidth} />
-                <Path d="M8 15.5V13m4 2.5V9m4 6.5v-4" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" />
-                <Circle cx="8" cy="10" r="1" fill={stroke} />
-            </Svg>
-        )
-    }
-
+function SummaryStat({ label, value, color }: { label: string; value: string; color: string }) {
     return (
-        <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-            <Path d="M4 15.4 9.8 9.6l3.2 3.2L19.5 6.3" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-            <Path d="M15.8 6.3h3.7V10" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
-            <Circle cx="9.8" cy="9.6" r="1.3" fill={stroke} />
-            <Circle cx="13" cy="12.8" r="1.3" fill={stroke} />
-        </Svg>
+        <View style={styles.summaryStat}>
+            <Text style={[styles.summaryStatValue, { color }]}>{value}</Text>
+            <Text style={styles.summaryStatLabel}>{label}</Text>
+        </View>
     )
 }
 
-function StatusRow({ label, value }: { label: string; value: string }) {
+function LegendDot({ color, label }: { color: string; label: string }) {
     return (
-        <View style={styles.statusRow}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusLabel}>{label}</Text>
-            <Text style={styles.statusValue}>{value}</Text>
+        <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: color }]} />
+            <Text style={styles.legendLabel}>{label}</Text>
         </View>
     )
 }
 
 const styles = StyleSheet.create({
-    container: {
+    screen: {
         flex: 1,
         backgroundColor: theme.colors.bg,
     },
+    container: {
+        flex: 1,
+    },
     content: {
-        padding: 20,
-        paddingTop: 48,
-        paddingBottom: 36,
+        paddingHorizontal: 20,
         position: 'relative',
     },
     glowTop: {
@@ -366,7 +393,7 @@ const styles = StyleSheet.create({
         width: 220,
         height: 220,
         borderRadius: 999,
-        backgroundColor: '#1d74c733',
+        backgroundColor: 'rgba(129,140,248,0.1)',
     },
     glowBottom: {
         position: 'absolute',
@@ -375,337 +402,359 @@ const styles = StyleSheet.create({
         width: 220,
         height: 220,
         borderRadius: 999,
-        backgroundColor: '#49d3ff1c',
+        backgroundColor: 'rgba(34,211,238,0.08)',
     },
-    hero: {
-        backgroundColor: theme.colors.panel,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        borderRadius: 26,
-        padding: 22,
-        marginBottom: 22,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 18 },
-        shadowOpacity: 0.16,
-        shadowRadius: 24,
-        elevation: 8,
-    },
-    heroHeader: {
+    headerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        gap: 16,
+        gap: 12,
+        marginBottom: 18,
     },
-    heroCopy: {
+    headerCopy: {
         flex: 1,
     },
     kicker: {
-        color: theme.colors.accent,
-        fontSize: 13,
-        letterSpacing: 3,
-        textTransform: 'uppercase',
-        fontWeight: '800',
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.mono,
+        fontSize: 10,
+        letterSpacing: 1.4,
     },
     title: {
         color: theme.colors.text,
-        fontSize: 30,
-        fontWeight: '900',
-        marginTop: 8,
+        fontFamily: theme.fonts.display,
+        fontSize: 21,
+        marginTop: 6,
+        letterSpacing: -0.4,
     },
-    welcome: {
-        color: theme.colors.text,
-        fontSize: 17,
-        marginTop: 12,
-        fontWeight: '600',
-    },
-    heroSubtitle: {
-        color: theme.colors.muted,
-        fontSize: 14,
-        lineHeight: 21,
-        marginTop: 8,
-        maxWidth: 280,
-    },
-    signOutButton: {
-        backgroundColor: '#32222d',
-        borderColor: '#8a4d5a',
-        borderWidth: 1,
-        borderRadius: 16,
-        paddingHorizontal: 16,
-        paddingVertical: 11,
-    },
-    signOutText: {
-        color: '#ffb4ad',
-        fontWeight: '800',
-        fontSize: 13,
-    },
-    heroPanel: {
-        marginTop: 22,
-        backgroundColor: '#203d68',
-        borderColor: '#4b75b7',
-        borderWidth: 1,
-        borderRadius: 24,
-        padding: 18,
+    headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 14,
-        overflow: 'hidden',
+        gap: 8,
+        paddingTop: 2,
     },
-    heroPanelIconWrap: {
-        width: 68,
-        height: 68,
-        borderRadius: 20,
-        backgroundColor: '#17304f',
+    iconButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 11,
+        backgroundColor: theme.colors.panel,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        alignItems: 'center',
         justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#2d5d97',
     },
-    heroPanelBody: {
-        flex: 1,
-    },
-    heroPanelTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: 10,
-    },
-    heroPanelTitle: {
-        color: theme.colors.text,
-        fontSize: 24,
-        fontWeight: '900',
-        flex: 1,
-    },
-    heroPanelSubtitle: {
-        color: '#bed3ef',
-        fontSize: 14,
-        lineHeight: 20,
-        marginTop: 8,
-    },
-    liveBadge: {
-        backgroundColor: '#24436f',
-        borderColor: '#4d86d0',
-        borderWidth: 1,
+    notifDot: {
+        position: 'absolute',
+        top: 7,
+        right: 7,
+        width: 6,
+        height: 6,
         borderRadius: 999,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
+        backgroundColor: theme.colors.danger,
+        borderWidth: 1.5,
+        borderColor: theme.colors.bg,
     },
-    liveBadgeText: {
-        color: '#d5ebff',
-        fontSize: 11,
-        fontWeight: '800',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
+    avatarButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 11,
+        borderWidth: 1,
+        borderColor: 'rgba(34,211,238,0.28)',
+        backgroundColor: 'rgba(34,211,238,0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    sectionHeader: {
+    avatarButtonText: {
+        fontFamily: theme.fonts.display,
+        fontSize: 12,
+        color: theme.colors.accent,
+    },
+    statusStrip: {
+        backgroundColor: theme.colors.panel,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: theme.radius.md,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
         marginBottom: 14,
     },
-    sectionTitle: {
-        color: theme.colors.text,
-        fontSize: 17,
-        fontWeight: '800',
+    statusTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
-    sectionSubtitle: {
-        color: theme.colors.muted,
+    statusDotRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    statusDotLive: {
+        width: 7,
+        height: 7,
+        borderRadius: 999,
+        backgroundColor: theme.colors.success,
+    },
+    statusStripText: {
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 12,
+        color: theme.colors.success,
+    },
+    statusMiniRow: {
+        flexDirection: 'row',
+        marginTop: 12,
+    },
+    statusMiniItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    statusMiniValue: {
+        fontFamily: theme.fonts.display,
         fontSize: 13,
-        marginTop: 4,
+    },
+    statusMiniLabel: {
+        fontFamily: theme.fonts.body,
+        fontSize: 9,
+        color: theme.colors.muted2,
+        marginTop: 2,
+    },
+    mapCard: {
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.panelSoft,
+        padding: 14,
+        marginBottom: 18,
+        overflow: 'hidden',
+    },
+    mapDots: {
+        position: 'absolute',
+        top: -20,
+        right: -20,
+        width: 140,
+        height: 140,
+        borderRadius: 999,
+        backgroundColor: 'rgba(34,211,238,0.06)',
+    },
+    mapTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    mapLocationChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: 'rgba(7,9,15,0.5)',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+    },
+    mapLocationText: {
+        color: theme.colors.text,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
+    },
+    mapNavigateButton: {
+        backgroundColor: theme.colors.accent,
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+    },
+    mapNavigateText: {
+        color: theme.colors.bg,
+        fontFamily: theme.fonts.bodyBold,
+        fontSize: 11,
+    },
+    mapOpenLink: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 14,
+    },
+    mapOpenLinkText: {
+        color: theme.colors.accentIndigo,
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 12,
     },
     quickGrid: {
-        gap: 14,
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 22,
     },
-    quickCard: {
+    quickTile: {
+        flex: 1,
         backgroundColor: theme.colors.panel,
-        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: theme.radius.xl,
+        padding: 16,
+        borderTopWidth: 2,
+        gap: 10,
+    },
+    quickTileCyan: {
+        borderTopColor: theme.colors.accent,
+    },
+    quickTileIndigo: {
+        borderTopColor: theme.colors.accentIndigo,
+    },
+    quickTileTitle: {
+        color: theme.colors.text,
+        fontFamily: theme.fonts.display,
+        fontSize: 14,
+    },
+    quickTileSubtitle: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
+        marginTop: -6,
+    },
+    sectionHeader: {
+        marginBottom: 12,
+    },
+    sectionTitle: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 11,
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+    },
+    chartHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    legendRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+    },
+    legendDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 2,
+    },
+    legendLabel: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
+        fontSize: 9,
+    },
+    seeAllText: {
+        color: theme.colors.accent,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
+    },
+    summaryCard: {
+        flexDirection: 'row',
+        backgroundColor: theme.colors.panel,
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        marginBottom: 22,
+    },
+    summaryStat: {
+        flex: 1,
+        alignItems: 'center',
+        paddingVertical: 16,
+    },
+    summaryStatValue: {
+        fontFamily: theme.fonts.display,
+        fontSize: 20,
+    },
+    summaryStatLabel: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
+        fontSize: 9,
+        marginTop: 3,
+    },
+    chartCard: {
+        backgroundColor: theme.colors.panel,
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
         borderColor: theme.colors.border,
         padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-        marginBottom: 2,
+        marginBottom: 22,
     },
-    quickCardIcon: {
-        width: 58,
-        height: 58,
-        borderRadius: 18,
-        backgroundColor: '#17304f',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#2b5279',
-    },
-    quickCardBody: {
-        flex: 1,
-    },
-    menuTopRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        marginBottom: 8,
-    },
-    badge: {
-        backgroundColor: '#1d4a67',
-        borderWidth: 1,
-        borderColor: '#2f739f',
-        borderRadius: 999,
-        paddingHorizontal: 9,
-        paddingVertical: 4,
-    },
-    badgeText: {
-        color: '#b8eeff',
-        fontSize: 10,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-        textTransform: 'uppercase',
-    },
-    menuTitle: {
-        fontSize: 21,
-        fontWeight: '800',
-        color: theme.colors.text,
-        flex: 1,
-    },
-    menuSubtitle: {
-        fontSize: 14,
-        color: theme.colors.muted,
-        lineHeight: 20,
-    },
-    statusCard: {
+    detectionsCard: {
         backgroundColor: theme.colors.panel,
-        borderRadius: 22,
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        padding: 18,
-        marginTop: 18,
+        overflow: 'hidden',
+        marginBottom: 22,
     },
-    cardTopRow: {
+    detectionDivider: {
+        height: 1,
+        backgroundColor: theme.colors.border,
+    },
+    detectionRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 14,
-    },
-    cardTitle: {
-        fontSize: 21,
-        fontWeight: '800',
-        color: theme.colors.text,
-    },
-    statusPill: {
-        backgroundColor: '#183f33',
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: '#2f8f71',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-    },
-    statusPillText: {
-        color: '#9ceccb',
-        fontSize: 11,
-        fontWeight: '800',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    statusList: {
         gap: 12,
+        padding: 14,
     },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    detectionBar: {
+        width: 3,
+        height: 32,
+        borderRadius: 2,
     },
-    statusDot: {
-        width: 9,
-        height: 9,
-        borderRadius: 999,
-        backgroundColor: '#8ad3a9',
-        marginRight: 10,
-    },
-    statusLabel: {
-        color: theme.colors.text,
-        fontSize: 16,
-        fontWeight: '600',
+    detectionBody: {
         flex: 1,
     },
-    statusValue: {
-        color: theme.colors.accent,
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    aboutCard: {
-        backgroundColor: theme.colors.panel,
-        borderRadius: 22,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        padding: 18,
-        marginTop: 18,
-    },
-    aboutText: {
-        color: theme.colors.muted,
-        fontSize: 14,
-        lineHeight: 22,
-        marginTop: 10,
-    },
-    faqList: {
-        marginTop: 12,
-        marginBottom: 16,
+    detectionTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 8,
+        marginBottom: 3,
     },
-    faqQuestion: {
+    detectionType: {
         color: theme.colors.text,
-        fontSize: 14,
-        fontWeight: '700',
-    },
-    faqAnswer: {
-        color: theme.colors.muted,
+        fontFamily: theme.fonts.bodySemiBold,
         fontSize: 13,
-        lineHeight: 20,
-        marginBottom: 6,
     },
-    contactLabel: {
-        color: theme.colors.muted,
+    detectionMeta: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
         fontSize: 11,
-        fontWeight: '700',
-        marginTop: 10,
-        marginBottom: 6,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
     },
-    contactInput: {
-        backgroundColor: '#17304f',
-        borderWidth: 1,
-        borderColor: '#2b5279',
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 11,
-        color: theme.colors.text,
-        fontSize: 14,
-    },
-    contactInputMultiline: {
-        minHeight: 96,
-    },
-    contactButton: {
-        marginTop: 14,
-        backgroundColor: theme.colors.accent,
-        borderRadius: 12,
+    emptyDetections: {
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
+        gap: 8,
+        paddingVertical: 24,
+        paddingHorizontal: 20,
     },
-    contactButtonDisabled: {
-        opacity: 0.75,
-    },
-    contactButtonText: {
-        color: '#052137',
-        fontWeight: '800',
-        fontSize: 14,
-    },
-    footer: {
-        alignItems: 'center',
-        marginTop: 26,
-        paddingBottom: 14,
-    },
-    footerText: {
-        color: '#7f96b4',
+    emptyDetectionsText: {
+        color: theme.colors.muted,
+        fontFamily: theme.fonts.body,
         fontSize: 12,
-        letterSpacing: 1,
-        textTransform: 'uppercase',
-        fontWeight: '700',
+        textAlign: 'center',
+    },
+    supportCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: theme.colors.panel,
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        padding: 16,
+        marginBottom: 12,
+    },
+    supportCopy: {
+        flex: 1,
+    },
+    supportTitle: {
+        color: theme.colors.text,
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 14,
+    },
+    supportSubtitle: {
+        color: theme.colors.muted2,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
+        marginTop: 2,
     },
 })

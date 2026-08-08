@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react'
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { supabase } from '../src/services/supabase.service'
 import { sendOtp, verifyOtp } from '../src/services/otp.service'
 import { getCurrentUser, requiresPasswordSetup, updatePassword } from '../src/services/mobile-auth.service'
 import { theme } from '../src/theme'
 import { BrandLoader } from '../components/brand-loader'
+import { BottomNavBar } from '../components/bottom-nav-bar'
+import { Pill } from '../components/ui-kit'
 
 type EditableRole = 'driver' | 'owner'
 
 export default function AccountScreen() {
+    const insets = useSafeAreaInsets()
     const [email, setEmail] = useState('')
     const [fullName, setFullName] = useState('')
     const [role, setRole] = useState<EditableRole>('driver')
@@ -163,116 +167,141 @@ export default function AccountScreen() {
         )
     }
 
+    const initials = (fullName.trim() || email.trim() || '?')
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join('') || '?'
+
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-            <View style={styles.panel}>
-                <Text style={styles.sectionTitle}>Account</Text>
-                {profileMessage ? <Text style={styles.successText}>{profileMessage}</Text> : null}
-                {profileError ? <Text style={styles.errorText}>{profileError}</Text> : null}
+        <View style={styles.screen}>
+            <ScrollView
+                style={styles.container}
+                contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: 128 }]}
+            >
+                <View style={styles.profileHeader}>
+                    <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>{initials}</Text>
+                    </View>
+                    <View style={styles.profileHeaderCopy}>
+                        <Text style={styles.profileName}>{fullName.trim() || 'RoadSense User'}</Text>
+                        <Text style={styles.profileEmail}>{email}</Text>
+                        <Pill tone="cyan" size="xs">{role === 'owner' ? 'Owner' : 'Driver'}</Pill>
+                    </View>
+                </View>
 
-                <Text style={styles.label}>Email</Text>
-                <TextInput style={[styles.input, styles.readOnlyInput]} value={email} editable={false} />
+                <View style={styles.panel}>
+                    <Text style={styles.sectionTitle}>Account</Text>
+                    {profileMessage ? <Text style={styles.successText}>{profileMessage}</Text> : null}
+                    {profileError ? <Text style={styles.errorText}>{profileError}</Text> : null}
 
-                <Text style={styles.label}>Full Name</Text>
-                <TextInput style={styles.input} value={fullName} onChangeText={setFullName} placeholder="Your full name" placeholderTextColor={theme.colors.muted} />
+                    <Text style={styles.label}>Email</Text>
+                    <TextInput style={[styles.input, styles.readOnlyInput]} value={email} editable={false} />
 
-                <Text style={styles.label}>Role</Text>
-                <View style={styles.roleRow}>
+                    <Text style={styles.label}>Full Name</Text>
+                    <TextInput style={styles.input} value={fullName} onChangeText={setFullName} placeholder="Your full name" placeholderTextColor={theme.colors.muted} />
+
+                    <Text style={styles.label}>Role</Text>
+                    <View style={styles.roleRow}>
+                        <TouchableOpacity
+                            style={[styles.roleChip, role === 'driver' && styles.roleChipActive]}
+                            onPress={() => setRole('driver')}
+                        >
+                            <Text style={[styles.roleChipText, role === 'driver' && styles.roleChipTextActive]}>Driver</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.roleChip, role === 'owner' && styles.roleChipActive]}
+                            onPress={() => setRole('owner')}
+                        >
+                            <Text style={[styles.roleChipText, role === 'owner' && styles.roleChipTextActive]}>Owner</Text>
+                        </TouchableOpacity>
+                    </View>
+
                     <TouchableOpacity
-                        style={[styles.roleChip, role === 'driver' && styles.roleChipActive]}
-                        onPress={() => setRole('driver')}
+                        style={[styles.buttonPrimary, savingProfile && styles.buttonDisabled]}
+                        onPress={() => void handleSaveProfile()}
+                        disabled={savingProfile}
                     >
-                        <Text style={[styles.roleChipText, role === 'driver' && styles.roleChipTextActive]}>Driver</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.roleChip, role === 'owner' && styles.roleChipActive]}
-                        onPress={() => setRole('owner')}
-                    >
-                        <Text style={[styles.roleChipText, role === 'owner' && styles.roleChipTextActive]}>Owner</Text>
+                        <Text style={styles.buttonPrimaryText}>{savingProfile ? 'Saving...' : 'Save Account'}</Text>
                     </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity
-                    style={[styles.buttonPrimary, savingProfile && styles.buttonDisabled]}
-                    onPress={() => void handleSaveProfile()}
-                    disabled={savingProfile}
-                >
-                    <Text style={styles.buttonPrimaryText}>{savingProfile ? 'Saving...' : 'Save Account'}</Text>
-                </TouchableOpacity>
-            </View>
+                <View style={styles.panel}>
+                    <Text style={styles.sectionTitle}>{passwordPanelTitle}</Text>
+                    {passwordMessage ? <Text style={styles.successText}>{passwordMessage}</Text> : null}
+                    {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
-            <View style={styles.panel}>
-                <Text style={styles.sectionTitle}>{passwordPanelTitle}</Text>
-                {passwordMessage ? <Text style={styles.successText}>{passwordMessage}</Text> : null}
-                {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+                    <Text style={styles.label}>New Password</Text>
+                    <TextInput
+                        style={styles.input}
+                        value={password}
+                        onChangeText={setPassword}
+                        placeholder="Enter a strong password"
+                        placeholderTextColor={theme.colors.muted}
+                        secureTextEntry
+                    />
 
-                <Text style={styles.label}>New Password</Text>
-                <TextInput
-                    style={styles.input}
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Enter a strong password"
-                    placeholderTextColor={theme.colors.muted}
-                    secureTextEntry
-                />
+                    <Text style={styles.label}>Confirm Password</Text>
+                    <TextInput
+                        style={styles.input}
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        placeholder="Re-enter your password"
+                        placeholderTextColor={theme.colors.muted}
+                        secureTextEntry
+                    />
 
-                <Text style={styles.label}>Confirm Password</Text>
-                <TextInput
-                    style={styles.input}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    placeholder="Re-enter your password"
-                    placeholderTextColor={theme.colors.muted}
-                    secureTextEntry
-                />
+                    <Text style={styles.label}>OTP</Text>
+                    <TextInput
+                        style={styles.input}
+                        value={otp}
+                        onChangeText={setOtp}
+                        placeholder="Enter OTP sent to your email"
+                        placeholderTextColor={theme.colors.muted}
+                        keyboardType="number-pad"
+                    />
 
-                <Text style={styles.label}>OTP</Text>
-                <TextInput
-                    style={styles.input}
-                    value={otp}
-                    onChangeText={setOtp}
-                    placeholder="Enter OTP sent to your email"
-                    placeholderTextColor={theme.colors.muted}
-                    keyboardType="number-pad"
-                />
+                    <View style={styles.actionRow}>
+                        <TouchableOpacity
+                            style={[styles.buttonSecondary, otpSending && styles.buttonDisabled]}
+                            onPress={() => void handleSendOtp()}
+                            disabled={otpSending}
+                        >
+                            <Text style={styles.buttonSecondaryText}>{otpSending ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}</Text>
+                        </TouchableOpacity>
 
-                <View style={styles.actionRow}>
-                    <TouchableOpacity
-                        style={[styles.buttonSecondary, otpSending && styles.buttonDisabled]}
-                        onPress={() => void handleSendOtp()}
-                        disabled={otpSending}
-                    >
-                        <Text style={styles.buttonSecondaryText}>{otpSending ? 'Sending...' : otpSent ? 'Resend OTP' : 'Send OTP'}</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.buttonPrimary, passwordSaving && styles.buttonDisabled]}
+                            onPress={() => void handleSetPassword()}
+                            disabled={passwordSaving}
+                        >
+                            <Text style={styles.buttonPrimaryText}>{passwordSaving ? 'Updating...' : passwordSubmitLabel}</Text>
+                        </TouchableOpacity>
+                    </View>
 
-                    <TouchableOpacity
-                        style={[styles.buttonPrimary, passwordSaving && styles.buttonDisabled]}
-                        onPress={() => void handleSetPassword()}
-                        disabled={passwordSaving}
-                    >
-                        <Text style={styles.buttonPrimaryText}>{passwordSaving ? 'Updating...' : passwordSubmitLabel}</Text>
-                    </TouchableOpacity>
+                    {!canSendOtp ? (
+                        <Text style={styles.helperText}>
+                            Enter the new password and confirm password with at least 8 characters before sending OTP.
+                        </Text>
+                    ) : null}
                 </View>
-
-                {!canSendOtp ? (
-                    <Text style={styles.helperText}>
-                        Enter the new password and confirm password with at least 8 characters before sending OTP.
-                    </Text>
-                ) : null}
-            </View>
-        </ScrollView>
+            </ScrollView>
+            <BottomNavBar active="account" />
+        </View>
     )
 }
 
 const styles = StyleSheet.create({
-    container: {
+    screen: {
         flex: 1,
         backgroundColor: theme.colors.bg,
     },
+    container: {
+        flex: 1,
+    },
     content: {
         paddingHorizontal: 20,
-        paddingTop: 48,
-        paddingBottom: 28,
         gap: 14,
     },
     center: {
@@ -281,9 +310,45 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: theme.colors.bg,
     },
+    profileHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+        marginBottom: 4,
+    },
+    avatar: {
+        width: 64,
+        height: 64,
+        borderRadius: 20,
+        backgroundColor: 'rgba(34,211,238,0.1)',
+        borderWidth: 1.5,
+        borderColor: 'rgba(34,211,238,0.28)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    avatarText: {
+        fontFamily: theme.fonts.display,
+        fontSize: 22,
+        color: theme.colors.accent,
+    },
+    profileHeaderCopy: {
+        flex: 1,
+        gap: 6,
+    },
+    profileName: {
+        fontFamily: theme.fonts.display,
+        fontSize: 19,
+        color: theme.colors.text,
+        letterSpacing: -0.3,
+    },
+    profileEmail: {
+        fontFamily: theme.fonts.body,
+        fontSize: 12,
+        color: theme.colors.muted,
+    },
     panel: {
         backgroundColor: theme.colors.panel,
-        borderRadius: theme.radius.lg,
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
         borderColor: theme.colors.border,
         paddingVertical: 20,
@@ -291,32 +356,30 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     sectionTitle: {
-        fontSize: 24,
-        fontWeight: '800',
+        fontSize: 18,
+        fontFamily: theme.fonts.display,
         color: theme.colors.text,
     },
-    panelText: {
-        color: theme.colors.muted,
-        fontSize: 14,
-        lineHeight: 20,
-    },
     label: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: theme.colors.muted,
+        fontSize: 11,
+        fontFamily: theme.fonts.bodySemiBold,
+        color: theme.colors.muted2,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
     },
     input: {
         backgroundColor: theme.colors.panelSoft,
         borderRadius: theme.radius.md,
         paddingVertical: 14,
         paddingHorizontal: 14,
-        fontSize: 15,
+        fontSize: 14,
+        fontFamily: theme.fonts.body,
         color: theme.colors.text,
         borderWidth: 1,
         borderColor: theme.colors.border,
     },
     readOnlyInput: {
-        opacity: 0.8,
+        opacity: 0.7,
     },
     roleRow: {
         flexDirection: 'row',
@@ -332,16 +395,16 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.panelSoft,
     },
     roleChipActive: {
-        backgroundColor: theme.colors.accent,
-        borderColor: theme.colors.accent,
+        backgroundColor: 'rgba(34,211,238,0.1)',
+        borderColor: 'rgba(34,211,238,0.4)',
     },
     roleChipText: {
-        color: theme.colors.text,
-        fontWeight: '800',
-        fontSize: 15,
+        color: theme.colors.muted,
+        fontFamily: theme.fonts.bodySemiBold,
+        fontSize: 14,
     },
     roleChipTextActive: {
-        color: '#032137',
+        color: theme.colors.accent,
     },
     buttonPrimary: {
         backgroundColor: theme.colors.accent,
@@ -353,12 +416,12 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     buttonPrimaryText: {
-        color: '#032137',
-        fontSize: 16,
-        fontWeight: '800',
+        color: theme.colors.bg,
+        fontSize: 14,
+        fontFamily: theme.fonts.bodyBold,
     },
     buttonSecondary: {
-        backgroundColor: '#1f3c5b',
+        backgroundColor: theme.colors.panelSoft,
         borderRadius: theme.radius.md,
         paddingVertical: 15,
         paddingHorizontal: 16,
@@ -370,8 +433,8 @@ const styles = StyleSheet.create({
     },
     buttonSecondaryText: {
         color: theme.colors.text,
-        fontSize: 16,
-        fontWeight: '800',
+        fontSize: 14,
+        fontFamily: theme.fonts.bodyBold,
     },
     buttonDisabled: {
         opacity: 0.6,
@@ -381,21 +444,19 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     successText: {
-        color: '#9ceccb',
-        fontWeight: '600',
+        color: theme.colors.success,
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
     },
     errorText: {
-        color: '#ff9f93',
-        fontWeight: '600',
+        color: theme.colors.danger,
+        fontFamily: theme.fonts.body,
+        fontSize: 13,
     },
     helperText: {
         color: theme.colors.muted,
-        fontSize: 12,
-        lineHeight: 18,
-    },
-    mandatoryHint: {
-        color: '#a9cce6',
-        fontSize: 12,
-        lineHeight: 18,
+        fontFamily: theme.fonts.body,
+        fontSize: 11,
+        lineHeight: 17,
     },
 })
