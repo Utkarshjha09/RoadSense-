@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
-import { useLocation } from 'react-router-dom'
+import BottomNav from './BottomNav'
 
-const pageTitles: Record<string, string> = {
+/** Breadcrumb leaf for each route. */
+const PAGE_TITLES: Record<string, string> = {
     '/dashboard': 'Dashboard',
     '/map': 'Map View',
     '/anomalies': 'Anomaly Management',
@@ -16,18 +17,39 @@ const pageTitles: Record<string, string> = {
 
 export default function Layout() {
     const location = useLocation()
-    const title = pageTitles[location.pathname] || 'RoadSense Admin'
+    const title = PAGE_TITLES[location.pathname] ?? 'RoadSense'
     const [sidebarOpen, setSidebarOpen] = useState(false)
 
+    // Close the drawer on navigation so it never lingers over a new page.
+    useEffect(() => {
+        setSidebarOpen(false)
+    }, [location.pathname])
+
+    // Lock body scroll while the drawer is open on small screens.
+    useEffect(() => {
+        document.body.style.overflow = sidebarOpen ? 'hidden' : ''
+        return () => {
+            document.body.style.overflow = ''
+        }
+    }, [sidebarOpen])
+
     return (
-        <div className="flex min-h-screen md:h-screen rs-grid-bg">
+        <div className="min-h-[100dvh] flex">
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <Header title={title} onMenuClick={() => setSidebarOpen((value) => !value)} />
-                <main className="flex-1 overflow-auto p-4 sm:p-6 md:p-8">
-                    <Outlet />
-                </main>
+
+            <div className="flex-1 min-w-0 flex flex-col">
+                {/* The app's 20px phone gutter, opened up as the viewport grows. */}
+                <div className="px-5 md:px-7 xl:px-9">
+                    <Header title={title} onMenuClick={() => setSidebarOpen((value) => !value)} />
+
+                    {/* Bottom padding clears the mobile tab bar. */}
+                    <main className="pt-6 pb-28 md:pb-10 max-w-[1500px] w-full mx-auto">
+                        <Outlet />
+                    </main>
+                </div>
             </div>
+
+            <BottomNav />
         </div>
     )
 }

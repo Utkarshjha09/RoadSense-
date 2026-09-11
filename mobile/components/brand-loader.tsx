@@ -6,23 +6,24 @@ type BrandLoaderProps = {
   label?: string
 }
 
-const BAR_COLORS = ['#22D3EE', '#3DD9E8', '#57DEDF', '#818CF8']
+/** Same four-bar sequence and colors as the web `.rs-loader`. */
+const BAR_COLORS = [theme.colors.primary, '#4FDDF5', theme.colors.secondary, '#A5AEFB']
 
 function AnimatedBar({ index }: { index: number }) {
-  const scaleY = useRef(new Animated.Value(1)).current
+  const scaleY = useRef(new Animated.Value(0.55)).current
 
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(scaleY, {
-          toValue: 2,
-          duration: 800,
+          toValue: 1.6,
+          duration: 750,
           delay: index * 120,
           useNativeDriver: true,
         }),
         Animated.timing(scaleY, {
-          toValue: 1,
-          duration: 800,
+          toValue: 0.55,
+          duration: 750,
           useNativeDriver: true,
         }),
       ])
@@ -32,13 +33,15 @@ function AnimatedBar({ index }: { index: number }) {
     return () => loop.stop()
   }, [index, scaleY])
 
+  const color = BAR_COLORS[index % BAR_COLORS.length]
+
   return (
     <Animated.View
       style={[
         styles.bar,
         {
-          backgroundColor: BAR_COLORS[index % BAR_COLORS.length],
-          shadowColor: BAR_COLORS[index % BAR_COLORS.length],
+          backgroundColor: color,
+          shadowColor: color,
           transform: [{ scaleY }],
         },
       ]}
@@ -46,7 +49,7 @@ function AnimatedBar({ index }: { index: number }) {
   )
 }
 
-export function BrandLoader({ label = 'Loading...' }: BrandLoaderProps) {
+export function BrandLoader({ label = 'Loading' }: BrandLoaderProps) {
   return (
     <View style={styles.wrapper}>
       <View style={styles.loaderRow}>
@@ -55,7 +58,7 @@ export function BrandLoader({ label = 'Loading...' }: BrandLoaderProps) {
         <AnimatedBar index={2} />
         <AnimatedBar index={3} />
       </View>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{label.toUpperCase()}</Text>
     </View>
   )
 }
@@ -65,28 +68,26 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: theme.space.md,
   },
   loaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 56,
+    height: 46,
+    gap: 6,
   },
   bar: {
-    width: 7,
-    height: 26,
-    borderRadius: 20,
-    marginHorizontal: 3,
+    width: 6,
+    height: 24,
+    borderRadius: 999,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.7,
     shadowRadius: 8,
     elevation: 4,
   },
   label: {
-    color: theme.colors.text,
-    fontSize: 14,
-    letterSpacing: 0.3,
+    ...theme.type.kicker,
+    color: theme.colors.textFaint,
   },
 })
-

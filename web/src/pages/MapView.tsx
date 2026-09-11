@@ -6,11 +6,14 @@ import {
     Marker,
     useJsApiLoader,
 } from '@react-google-maps/api'
-import { LocateFixed } from 'lucide-react'
+import { LocateFixed, Route as RouteIcon, X, MapPin, AlertTriangle } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { getAnomaliesInViewport } from '../lib/queries'
 import { Anomaly, supabase } from '../lib/supabase'
 import { calculateRouteQuality, RouteQualityStats } from '../lib/routeQuality'
+import { Card, Pill, Button, IconButton, EmptyState } from '../components/ui'
+import { DARK_MAP_STYLE } from '../lib/mapStyle'
+import LoaderBars from '../components/LoaderBars'
 
 const GOOGLE_MAPS_API_KEY = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim()
 
@@ -19,12 +22,21 @@ const mapContainerStyle = {
     height: '100%',
 }
 
-const mapOptions = {
+const mapOptions: google.maps.MapOptions = {
     disableDefaultUI: false,
     zoomControl: true,
     streetViewControl: false,
-    mapTypeControl: true,
+    mapTypeControl: false,
     fullscreenControl: true,
+    clickableIcons: false,
+    // Dark basemap so the map reads as part of the app, not a white cut-out.
+    styles: DARK_MAP_STYLE,
+}
+
+/** Marker colors come from the design tokens, not ad-hoc hexes. */
+const MARKER_COLORS = {
+    POTHOLE: '#fb7185',
+    SPEED_BUMP: '#fbbf24',
 }
 
 export default function MapView() {
@@ -293,131 +305,166 @@ export default function MapView() {
 
     if (!isKeyConfigured) {
         return (
-            <div className="h-full rs-panel flex items-center justify-center">
-                <div className="text-center p-8">
-                    <h3 className="text-xl font-bold text-[var(--rs-text)] mb-2">Google Maps API Key Required</h3>
-                    <p className="text-[var(--rs-muted)] mb-4">Please add VITE_GOOGLE_MAPS_API_KEY to your .env file</p>
-                    <p className="text-sm text-[var(--rs-muted)]">Restart the Vite server after updating .env</p>
-                </div>
-            </div>
+            <Card className="min-h-[70vh] flex items-center justify-center">
+                <EmptyState
+                    icon={MapPin}
+                    title="Map key required"
+                    description="Add VITE_GOOGLE_MAPS_API_KEY to your .env file, then restart the dev server."
+                />
+            </Card>
         )
     }
 
     if (loadError) {
         return (
-            <div className="h-full rs-panel flex items-center justify-center">
-                <div className="text-center p-8">
-                    <h3 className="text-xl font-bold text-red-400 mb-2">Map Could Not Load</h3>
-                    <p className="text-[var(--rs-text)] mb-3">
-                        Google Maps failed to load. Check API key, billing, Maps JavaScript API, and allowed referrer in Google Cloud Console.
-                    </p>
-                    <p className="text-sm text-[var(--rs-muted)]">Open browser console for exact Google Maps error details.</p>
-                </div>
-            </div>
+            <Card className="min-h-[70vh] flex items-center justify-center">
+                <EmptyState
+                    icon={AlertTriangle}
+                    title="Map could not load"
+                    description="Check the API key, billing, the Maps JavaScript API, and the allowed referrer in Google Cloud Console. The browser console has the exact error."
+                />
+            </Card>
         )
     }
 
     return (
-        <div className="h-full rs-panel overflow-hidden relative">
-            <div className="absolute top-20 left-4 z-10 flex gap-2">
-                <button
-                    type="button"
-                    onClick={() => setRouteDialogOpen(true)}
-                    className="rs-button-primary px-4 py-2.5"
-                >
+        <div className="rs-fade-up">
+            {/* Toolbar above the map, so it never covers the canvas. */}
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+                <Button icon={RouteIcon} onClick={() => setRouteDialogOpen(true)}>
                     Analyze Route
-                </button>
-                {routeStats && (
-                    <div className="rs-panel-soft px-3 py-2 text-sm text-[var(--rs-text)]">
-                        {routeDistance || '-'} | {routeDuration || '-'} | Smoothness {routeStats.smoothPercent}%
-                    </div>
-                )}
+                </Button>
+                <p className="text-[14px] text-[var(--rs-text-muted)]">
+                    Draw a route on the map to scan for road anomalies.
+                </p>
             </div>
 
+        <div className="rs-panel overflow-hidden relative h-[calc(100dvh-13rem)] min-h-[30rem]">
+            {!routeDialogOpen && routeStats && (
+                <div className="absolute top-4 left-4 right-4 z-10 flex flex-wrap items-center gap-2">
+                    {routeStats && (
+                        <div className="rs-panel-soft px-3 py-2 flex items-center gap-3 shadow-raised backdrop-blur-md">
+                            <span className="rs-mono text-xs text-[var(--rs-text)]">{routeDistance || 'N/A'}</span>
+                            <span className="w-px h-3 bg-[var(--rs-line-strong)]" />
+                            <span className="rs-mono text-xs text-[var(--rs-text)]">{routeDuration || 'N/A'}</span>
+                            <span className="w-px h-3 bg-[var(--rs-line-strong)]" />
+                            <Pill tone={routeStats.smoothPercent >= 70 ? 'success' : routeStats.smoothPercent >= 40 ? 'warn' : 'danger'}>
+                                {routeStats.smoothPercent}% smooth
+                            </Pill>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {routeDialogOpen && (
-                <div className="absolute top-20 left-4 z-20 w-[560px] max-w-[calc(100%-2rem)] bg-[#2b5c7bcf] border border-cyan-300/25 rounded-2xl p-4 space-y-3 backdrop-blur-sm">
-                    <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/85">Route Analytics</p>
+                <div className="absolute top-4 left-4 z-20 w-[min(30rem,calc(100%-2rem))] rs-panel shadow-raised backdrop-blur-md p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="rs-kicker">Route Analytics</p>
+                        <IconButton icon={X} label="Close route panel" onClick={() => setRouteDialogOpen(false)} className="h-7 w-7" />
+                    </div>
                     <input
                         value={originInput}
                         onChange={(e) => setOriginInput(e.target.value)}
                         className="rs-input"
-                        placeholder="Origin (address or lat,lng)"
+                        placeholder="Origin (address or lat, lng)"
+                        aria-label="Route origin"
                     />
                     <input
                         value={destinationInput}
                         onChange={(e) => setDestinationInput(e.target.value)}
                         className="rs-input"
-                        placeholder="Destination (address or lat,lng)"
+                        placeholder="Destination (address or lat, lng)"
+                        aria-label="Route destination"
                     />
-                    <div className="flex gap-3">
-                        <button
-                            type="button"
+                    <div className="flex gap-2">
+                        <Button
                             onClick={() => void analyzeRoute()}
                             disabled={routeLoading || !originInput || !destinationInput}
-                            className="rs-button-primary px-6 py-2.5 disabled:opacity-60"
+                            className="flex-1"
                         >
-                            {routeLoading ? 'Analyzing...' : 'Analyze Route'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={clearRoute}
-                            className="rs-button-secondary px-6 py-2.5"
-                        >
+                            {routeLoading ? 'Analyzing...' : 'Analyze'}
+                        </Button>
+                        <Button variant="secondary" onClick={clearRoute}>
                             Clear
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setRouteDialogOpen(false)}
-                            className="rs-button-secondary px-6 py-2.5"
-                        >
-                            Close
-                        </button>
+                        </Button>
                     </div>
-                    {routeError && <p className="text-sm text-rose-300">{routeError}</p>}
+                    {routeError && <p className="text-[13px] text-[var(--rs-danger)]">{routeError}</p>}
                 </div>
             )}
 
             {selectedAnomaly && (
-                <div className="absolute top-20 right-4 z-20 w-[360px] max-w-[calc(100%-2rem)] bg-[#072338d9] border border-cyan-300/25 rounded-2xl p-4 space-y-3 backdrop-blur-sm">
-                    <div className="flex items-start justify-between gap-3">
+                <div className="absolute bottom-4 left-4 right-4 sm:left-auto sm:top-4 sm:bottom-auto sm:right-4 sm:w-[22rem] z-20 rs-panel shadow-raised backdrop-blur-md p-4">
+                    <div className="flex items-start justify-between gap-3 mb-3">
                         <div>
-                            <p className="text-xs uppercase tracking-[0.14em] text-cyan-100/85">Anomaly Details</p>
-                            <h3 className="text-lg font-semibold text-white mt-1">
-                                {selectedAnomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
-                            </h3>
+                            <p className="rs-kicker mb-1">Anomaly Details</p>
+                            <div className="flex items-center gap-2">
+                                <h3 className="rs-heading">
+                                    {selectedAnomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
+                                </h3>
+                                <Pill tone={selectedAnomaly.verified ? 'success' : 'danger'}>
+                                    {selectedAnomaly.verified ? 'Repaired' : 'Active'}
+                                </Pill>
+                            </div>
                         </div>
-                        <button
-                            type="button"
-                            className="rs-button-secondary px-3 py-1.5 text-xs"
-                            onClick={() => setSelectedAnomaly(null)}
-                        >
-                            Close
-                        </button>
+                        <IconButton icon={X} label="Close details" onClick={() => setSelectedAnomaly(null)} className="h-7 w-7" />
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm text-[var(--rs-text)]">
-                        <p>Severity: <span className="font-semibold">{(selectedAnomaly.severity * 100).toFixed(0)}%</span></p>
-                        <p>Confidence: <span className="font-semibold">{(selectedAnomaly.confidence * 100).toFixed(0)}%</span></p>
-                        <p>Status: <span className="font-semibold">{selectedAnomaly.verified ? 'Repaired/Verified' : 'Active'}</span></p>
-                        <p>Reports: <span className="font-semibold">{selectedAnomaly.verification_count}</span></p>
-                        <p className="col-span-2">Speed: <span className="font-semibold">{selectedAnomaly.speed ? `${Number(selectedAnomaly.speed).toFixed(1)} km/h` : 'N/A'}</span></p>
-                        <p className="col-span-2">Coordinates: <span className="font-semibold">{selectedAnomaly.latitude.toFixed(6)}, {selectedAnomaly.longitude.toFixed(6)}</span></p>
-                        <p className="col-span-2">Detected At: <span className="font-semibold">{new Date(selectedAnomaly.created_at).toLocaleString()}</span></p>
+
+                    {/* Two metrics get the large treatment; the rest are a compact list. */}
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="rounded-[var(--rs-r-md)] bg-[var(--rs-surface-2)] border border-[var(--rs-line)] p-3">
+                            <p className="rs-kicker mb-1">Severity</p>
+                            <p className="rs-metric text-[var(--rs-danger)]">{(selectedAnomaly.severity * 100).toFixed(0)}%</p>
+                        </div>
+                        <div className="rounded-[var(--rs-r-md)] bg-[var(--rs-surface-2)] border border-[var(--rs-line)] p-3">
+                            <p className="rs-kicker mb-1">Confidence</p>
+                            <p className="rs-metric text-[var(--rs-primary)]">{(selectedAnomaly.confidence * 100).toFixed(0)}%</p>
+                        </div>
+                    </div>
+
+                    <dl className="space-y-2 text-[13px]">
+                        <div className="flex justify-between gap-3">
+                            <dt className="rs-muted">Reports</dt>
+                            <dd className="rs-mono text-[var(--rs-text)]">{selectedAnomaly.verification_count}</dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                            <dt className="rs-muted">Speed</dt>
+                            <dd className="rs-mono text-[var(--rs-text)]">
+                                {selectedAnomaly.speed ? Number(selectedAnomaly.speed).toFixed(1) + ' km/h' : 'N/A'}
+                            </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                            <dt className="rs-muted">Coordinates</dt>
+                            <dd className="rs-mono text-[var(--rs-text)] text-xs">
+                                {selectedAnomaly.latitude.toFixed(5)}, {selectedAnomaly.longitude.toFixed(5)}
+                            </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                            <dt className="rs-muted">Detected</dt>
+                            <dd className="text-[var(--rs-text)] text-xs text-right">
+                                {new Date(selectedAnomaly.created_at).toLocaleString()}
+                            </dd>
+                        </div>
                         {routeStats && (
-                            <p className="col-span-2">
-                                Route Match: <span className={`font-semibold ${selectedOnCurrentRoute ? 'text-emerald-300' : 'text-amber-300'}`}>{selectedOnCurrentRoute ? 'On current route' : 'Outside current route'}</span>
-                            </p>
+                            <div className="flex justify-between gap-3 items-center pt-1">
+                                <dt className="rs-muted">Route match</dt>
+                                <dd>
+                                    <Pill tone={selectedOnCurrentRoute ? 'success' : 'neutral'}>
+                                        {selectedOnCurrentRoute ? 'On route' : 'Off route'}
+                                    </Pill>
+                                </dd>
+                            </div>
                         )}
-                    </div>
+                    </dl>
                 </div>
             )}
 
             {!isLoaded ? (
                 <div className="flex items-center justify-center h-full">
-                    <div className="text-white text-xl">Loading Google Maps...</div>
+                    <LoaderBars label="Loading map" />
                 </div>
             ) : loadingData ? (
                 <div className="flex items-center justify-center h-full">
-                    <div className="text-white text-xl">Loading pothole coordinates...</div>
+                    <LoaderBars label="Loading road data" />
                 </div>
             ) : (
                 <GoogleMap
@@ -432,9 +479,9 @@ export default function MapView() {
                             options={{
                                 suppressMarkers: true,
                                 polylineOptions: {
-                                    strokeColor: '#44d0ff',
-                                    strokeOpacity: 0.88,
-                                    strokeWeight: 6,
+                                    strokeColor: '#22d3ee',
+                                    strokeOpacity: 0.9,
+                                    strokeWeight: 5,
                                 },
                             }}
                         />
@@ -444,11 +491,12 @@ export default function MapView() {
                         const onRoute = routeAnomalyIds.has(anomaly.id)
                         const markerIcon = {
                             path: window.google.maps.SymbolPath.CIRCLE,
-                            fillColor: anomaly.type === 'POTHOLE' ? '#ef4444' : '#f59e0b',
-                            fillOpacity: onRoute ? 1 : 0.85,
-                            strokeColor: '#ffffff',
-                            strokeWeight: onRoute ? 2.5 : 2,
-                            scale: onRoute ? 9 : 7,
+                            fillColor: MARKER_COLORS[anomaly.type as keyof typeof MARKER_COLORS] ?? MARKER_COLORS.POTHOLE,
+                            fillOpacity: onRoute ? 1 : 0.78,
+                            // On-route markers get a bright ring so they read first.
+                            strokeColor: onRoute ? '#ffffff' : '#070a10',
+                            strokeWeight: onRoute ? 2.5 : 1.5,
+                            scale: onRoute ? 9 : 6.5,
                         }
 
                         return (
@@ -481,18 +529,29 @@ export default function MapView() {
                             }}
                             onCloseClick={() => setSelectedAnomaly(null)}
                         >
-                            <div className="p-2">
-                                <h3 className="font-bold mb-2">{selectedAnomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}</h3>
-                                <p className="text-sm">
-                                    <strong>Severity:</strong> {(selectedAnomaly.severity * 100).toFixed(0)}%
-                                </p>
-                                <p className="text-sm">
-                                    <strong>Confidence:</strong> {(selectedAnomaly.confidence * 100).toFixed(0)}%
-                                </p>
-                                <p className="text-sm">
-                                    <strong>Status:</strong> {selectedAnomaly.verified ? 'Filled/Verified' : 'Active'}
-                                </p>
-                                <p className="text-sm text-gray-600">{new Date(selectedAnomaly.created_at).toLocaleString()}</p>
+                            <div className="rs-infowindow">
+                                <div className="flex items-center gap-2 mb-2.5">
+                                    <span
+                                        className="rs-spine !h-[18px]"
+                                        style={{ background: selectedAnomaly.type === 'POTHOLE' ? 'var(--rs-danger)' : 'var(--rs-warn)' }}
+                                    />
+                                    <p className="rs-heading">{selectedAnomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}</p>
+                                </div>
+                                <div className="rs-infowindow-row">
+                                    <span className="rs-faint">Severity</span>
+                                    <span className="rs-mono">{(selectedAnomaly.severity * 100).toFixed(0)}%</span>
+                                </div>
+                                <div className="rs-infowindow-row">
+                                    <span className="rs-faint">Confidence</span>
+                                    <span className="rs-mono">{(selectedAnomaly.confidence * 100).toFixed(0)}%</span>
+                                </div>
+                                <div className="rs-infowindow-row">
+                                    <span className="rs-faint">Status</span>
+                                    <Pill tone={selectedAnomaly.verified ? 'success' : 'neutral'}>
+                                        {selectedAnomaly.verified ? 'Verified' : 'Active'}
+                                    </Pill>
+                                </div>
+                                <p className="rs-micro mt-2.5">{new Date(selectedAnomaly.created_at).toLocaleString()}</p>
                             </div>
                         </InfoWindow>
                     )}
@@ -502,18 +561,19 @@ export default function MapView() {
                 <button
                     type="button"
                     onClick={goToCurrentLocation}
-                    className="absolute bottom-6 right-24 bg-cyan-500 hover:bg-cyan-400 text-[#071325] w-12 h-12 rounded-full border border-cyan-300 shadow-lg flex items-center justify-center transition-colors"
+                    className="absolute bottom-6 right-4 sm:right-6 w-11 h-11 rounded-full grid place-items-center bg-[var(--rs-primary)] text-[var(--rs-primary-ink)] shadow-raised hover:brightness-110 active:scale-95 transition-all z-10"
                     aria-label="Go to current location"
                     title="Go to current location"
                 >
-                    <LocateFixed size={20} />
+                    <LocateFixed size={19} />
                 </button>
             )}
             {locationError && (
-                <div className="absolute bottom-6 left-6 bg-[#071325e8] text-[var(--rs-text)] text-sm px-3 py-2 rounded border border-[var(--rs-border-soft)]">
+                <div className="absolute bottom-6 left-4 sm:left-6 z-10 rs-panel-soft backdrop-blur-md px-3 py-2 text-[13px] text-[var(--rs-warn)] shadow-raised">
                     {locationError}
                 </div>
             )}
+        </div>
         </div>
     )
 }

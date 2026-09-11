@@ -14,6 +14,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps'
 import * as Location from 'expo-location'
 import { getAnomaliesInViewport } from '../src/services/supabase.service'
 import { theme } from '../src/theme'
+import { DARK_MAP_STYLE } from '../src/map-style'
 import {
     calculateRouteStats,
     decodePolyline,
@@ -222,6 +223,7 @@ export default function MapScreen() {
             <MapView
                 ref={mapRef}
                 style={styles.map}
+                customMapStyle={DARK_MAP_STYLE}
                 initialRegion={{
                     latitude: coords.latitude,
                     longitude: coords.longitude,
@@ -249,7 +251,7 @@ export default function MapScreen() {
                         key={route.id}
                         coordinates={route.path}
                         strokeWidth={route.id === selectedRouteId ? 6 : 4}
-                        strokeColor={route.id === selectedRouteId ? theme.colors.accent : 'rgba(237,242,255,0.28)'}
+                        strokeColor={route.id === selectedRouteId ? theme.colors.primary : 'rgba(233,240,255,0.28)'}
                     />
                 ))}
             </MapView>

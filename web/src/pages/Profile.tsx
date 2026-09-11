@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { UserCircle2, Mail, Shield, Save, LockKeyhole, Eye, EyeOff } from 'lucide-react'
+import { Mail, Shield, Save, LockKeyhole, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../components/AuthProvider'
 import { supabase } from '../lib/supabase'
 import { sendOtp, verifyOtp } from '../lib/otp'
+import { Card, Button } from '../components/ui'
 
 type EditableRole = 'driver' | 'owner'
 
@@ -171,49 +172,42 @@ export default function Profile() {
     return (
         <div className="space-y-6 rs-fade-up">
             {requiresPasswordSetup && (
-                <div className="rounded-2xl border border-amber-400/35 bg-amber-500/10 px-5 py-4 text-amber-100">
-                    <div className="flex items-start gap-3">
-                        <LockKeyhole size={18} className="mt-1 shrink-0" />
-                        <div>
-                            <p className="font-semibold">Set a password to complete your first Google sign-in.</p>
-                            <p className="text-sm mt-1 text-amber-50/85">
-                                Once set, you can use either `Continue with Google` or your email and password on future logins.
-                            </p>
-                        </div>
+                <div className="rs-banner rs-banner-warn">
+                    <LockKeyhole size={16} className="mt-0.5 shrink-0" />
+                    <div>
+                        <p className="font-semibold">Set a password to complete your first Google sign-in.</p>
+                        <p className="rs-muted mt-1">
+                            Once set, you can use either `Continue with Google` or your email and password on future logins.
+                        </p>
                     </div>
                 </div>
             )}
 
             <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.7fr] gap-6">
                 <section className="space-y-6">
-                    <div className="rs-panel p-6">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-12 h-12 rounded-2xl bg-[linear-gradient(135deg,#255680,#4d94d3)] flex items-center justify-center">
-                                <UserCircle2 className="text-white" size={24} />
-                            </div>
-                            <div>
-                                <h3 className="text-2xl font-bold text-[var(--rs-text)]">Edit Profile</h3>
-                                <p className="text-[var(--rs-muted)]">
-                                    Update your name, email, and whether this account represents a driver or vehicle owner.
-                                </p>
-                            </div>
+                    <Card className="p-5 sm:p-6">
+                        <div className="mb-5">
+                            <h2 className="rs-heading">Edit Profile</h2>
+                            <p className="text-[13px] rs-muted mt-1">
+                                Update your name, email, and account role.
+                            </p>
                         </div>
 
                         {message && (
-                            <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                            <div className="rs-banner rs-banner-success mb-4">
                                 {message}
                             </div>
                         )}
 
                         {error && (
-                            <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                            <div className="rs-banner rs-banner-danger mb-4">
                                 {error}
                             </div>
                         )}
 
                         <form onSubmit={handleSubmit} className="space-y-5">
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
+                                <label className="rs-label">
                                     Full Name
                                 </label>
                                 <input
@@ -226,7 +220,7 @@ export default function Profile() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
+                                <label className="rs-label">
                                     Email
                                 </label>
                                 <input
@@ -237,13 +231,13 @@ export default function Profile() {
                                     placeholder="Enter your email"
                                     required
                                 />
-                                <p className="text-xs text-[var(--rs-muted)] mt-2">
+                                <p className="text-[11px] rs-faint mt-2">
                                     If you change your email, Supabase may send a confirmation message to the new address.
                                 </p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
+                                <label className="rs-label">
                                     Account Role
                                 </label>
                                 <select
@@ -254,79 +248,62 @@ export default function Profile() {
                                     <option value="driver">Driver</option>
                                     <option value="owner">Owner</option>
                                 </select>
-                                <p className="text-xs text-[var(--rs-muted)] mt-2">
+                                <p className="text-[11px] rs-faint mt-2">
                                     `Owner` is for your own vehicle account. `Admin` remains restricted and cannot be self-assigned here.
                                 </p>
                             </div>
 
-                            <button
-                                type="submit"
-                                disabled={saving}
-                                className="rs-button-primary inline-flex items-center gap-2 px-5 py-3 disabled:opacity-60 disabled:cursor-not-allowed"
-                            >
-                                <Save size={18} />
+                            <Button type="submit" icon={Save} disabled={saving}>
                                 {saving ? 'Saving...' : 'Save Changes'}
-                            </button>
+                            </Button>
                         </form>
-                    </div>
+                    </Card>
 
                     {!showPasswordPanel ? (
-                        <div className="rs-panel p-6">
-                            <div className="flex items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-2xl bg-[linear-gradient(135deg,#1f5b7b,#3c9fcf)] flex items-center justify-center">
-                                        <LockKeyhole className="text-white" size={24} />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-2xl font-bold text-[var(--rs-text)]">Password</h3>
-                                        <p className="text-[var(--rs-muted)]">
-                                            Change your password when needed.
-                                        </p>
-                                    </div>
+                        <Card className="p-5 sm:p-6">
+                            <div className="flex flex-wrap items-center justify-between gap-4">
+                                <div>
+                                    <h2 className="rs-heading">Password</h2>
+                                    <p className="text-[13px] rs-muted mt-1">Change your password when needed.</p>
                                 </div>
-                                <button
+                                <Button
                                     type="button"
+                                    variant="secondary"
+                                    icon={LockKeyhole}
                                     onClick={() => setShowPasswordPanel(true)}
-                                    className="rs-button-secondary inline-flex items-center gap-2 px-5 py-3"
                                 >
-                                    <LockKeyhole size={18} />
                                     Change Password
-                                </button>
+                                </Button>
                             </div>
-                        </div>
+                        </Card>
                     ) : (
-                    <div className="rs-panel p-6">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-12 h-12 rounded-2xl bg-[linear-gradient(135deg,#1f5b7b,#3c9fcf)] flex items-center justify-center">
-                                <LockKeyhole className="text-white" size={24} />
-                            </div>
-                            <div>
-                                <h3 className="text-2xl font-bold text-[var(--rs-text)]">
-                                    {requiresPasswordSetup ? 'Set Password' : 'Change Password'}
-                                </h3>
-                                <p className="text-[var(--rs-muted)]">
-                                    {isGoogleUser
-                                        ? 'Use this to enable email/password login in addition to Google.'
-                                        : 'Update the password used for email/password sign-in.'}
-                                </p>
-                            </div>
+                    <Card className="p-5 sm:p-6">
+                        <div className="mb-5">
+                            <h2 className="rs-heading">
+                                {requiresPasswordSetup ? 'Set Password' : 'Change Password'}
+                            </h2>
+                            <p className="text-[13px] rs-muted mt-1">
+                                {isGoogleUser
+                                    ? 'Use this to enable email/password login in addition to Google.'
+                                    : 'Update the password used for email/password sign-in.'}
+                            </p>
                         </div>
 
                         {passwordMessage && (
-                            <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                            <div className="rs-banner rs-banner-success mb-4">
                                 {passwordMessage}
                             </div>
                         )}
 
                         {passwordError && (
-                            <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                            <div className="rs-banner rs-banner-danger mb-4">
                                 {passwordError}
                             </div>
                         )}
 
                         <form onSubmit={handlePasswordSubmit} className="space-y-5">
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
+                                <label className="rs-label">
                                     New Password
                                 </label>
                                 <div className="relative">
@@ -351,7 +328,7 @@ export default function Profile() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
+                                <label className="rs-label">
                                     Confirm Password
                                 </label>
                                 <div className="relative">
@@ -376,7 +353,7 @@ export default function Profile() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
+                                <label className="rs-label">
                                     OTP
                                 </label>
                                 <input
@@ -390,26 +367,22 @@ export default function Profile() {
                             </div>
 
                             <div className="flex items-center gap-3">
-                                <button
+                                <Button
                                     type="button"
+                                    variant="secondary"
+                                    icon={Mail}
                                     onClick={() => void handleSendPasswordOtp()}
                                     disabled={otpSending || !canSendPasswordOtp}
-                                    className="rs-button-secondary inline-flex items-center gap-2 px-5 py-3 disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    <Mail size={18} />
                                     {otpSending ? 'Sending OTP...' : passwordOtpSent ? 'Resend OTP' : 'Send OTP'}
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={passwordSaving}
-                                    className="rs-button-secondary inline-flex items-center gap-2 px-5 py-3 disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                    <LockKeyhole size={18} />
+                                </Button>
+                                <Button type="submit" icon={LockKeyhole} disabled={passwordSaving}>
                                     {passwordSaving ? 'Saving Password...' : requiresPasswordSetup ? 'Set Password' : 'Update Password'}
-                                </button>
+                                </Button>
                                 {!requiresPasswordSetup && (
-                                    <button
+                                    <Button
                                         type="button"
+                                        variant="ghost"
                                         onClick={() => {
                                             setShowPasswordPanel(false)
                                             setPassword('')
@@ -421,42 +394,42 @@ export default function Profile() {
                                             setShowNewPassword(false)
                                             setShowConfirmPassword(false)
                                         }}
-                                        className="rs-button-secondary px-5 py-3"
                                     >
                                         Cancel
-                                    </button>
+                                    </Button>
                                 )}
                             </div>
                             {!canSendPasswordOtp && (
-                                <p className="text-xs text-[var(--rs-muted)]">
+                                <p className="text-[11px] rs-faint">
                                     Enter the new password and confirm password with at least 8 characters before sending OTP.
                                 </p>
                             )}
                         </form>
-                    </div>
+                    </Card>
                     )}
                 </section>
 
                 <aside className="space-y-6">
-                    <div className="rs-panel p-6">
-                        <h3 className="text-lg font-semibold text-[var(--rs-text)] mb-4">Account Details</h3>
+                    <Card className="p-5">
+                        <h2 className="rs-heading mb-4">Account Details</h2>
                         <div className="space-y-4">
-                            <InfoRow icon={<Mail size={16} />} label="Email" value={profile?.email ?? user?.email ?? '-'} />
-                            <InfoRow icon={<Shield size={16} />} label="Role" value={profile?.role ?? 'driver'} />
+                            <InfoRow icon={<Mail size={13} />} label="Email" value={profile?.email ?? user?.email ?? '-'} />
+                            <InfoRow icon={<Shield size={13} />} label="Role" value={profile?.role ?? 'driver'} />
                             <InfoRow label="Score" value={String(profile?.score ?? 0)} />
                             <InfoRow
                                 label="Joined"
                                 value={profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : '-'}
                             />
                         </div>
-                    </div>
+                    </Card>
 
-                    <div className="rs-panel p-6">
-                        <h3 className="text-lg font-semibold text-[var(--rs-text)] mb-2">Access Model</h3>
-                        <p className="text-sm text-[var(--rs-muted)] leading-6">
-                            Driver and owner accounts can use the main dashboard, map, and anomaly pages. Only admins can access user management and assign admin privileges.
+                    <Card className="p-5">
+                        <h2 className="rs-heading mb-2">Access Level</h2>
+                        <p className="text-[14px] rs-muted leading-relaxed">
+                            Driver and owner accounts can access the dashboard, map, and anomaly pages. Only admins can
+                            manage users or assign admin privileges.
                         </p>
-                    </div>
+                    </Card>
                 </aside>
             </div>
         </div>
@@ -473,12 +446,12 @@ function InfoRow({
     icon?: ReactNode
 }) {
     return (
-        <div className="rounded-xl border border-[var(--rs-border)] bg-[rgba(9,22,39,0.72)] px-4 py-3">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[var(--rs-muted)]">
+        <div>
+            <div className="flex items-center gap-1.5 text-[var(--rs-text-faint)]">
                 {icon}
-                <span>{label}</span>
+                <span className="rs-kicker">{label}</span>
             </div>
-            <p className="mt-2 text-sm font-semibold text-[var(--rs-text)] break-all">{value}</p>
+            <p className="mt-1 text-[15px] text-[var(--rs-text)] break-all">{value}</p>
         </div>
     )
 }

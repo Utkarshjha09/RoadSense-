@@ -7,8 +7,9 @@ import {
     deleteAnomaly,
 } from '../lib/queries'
 import { Anomaly } from '../lib/supabase'
-import { CheckCircle, Trash2, Filter, LocateFixed, Clock3 } from 'lucide-react'
+import { CheckCircle, Trash2, Filter, LocateFixed, Clock3, AlertTriangle } from 'lucide-react'
 import LoaderBars from '../components/LoaderBars'
+import { Card, Pill, EmptyState, Button, IconButton } from '../components/ui'
 
 export default function AnomalyManagement() {
     const [anomalies, setAnomalies] = useState<Anomaly[]>([])
@@ -54,11 +55,7 @@ export default function AnomalyManagement() {
                     setLocationError('Could not access your location. Please allow location permission.')
                     resolve()
                 },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 12000,
-                    maximumAge: 30000,
-                }
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
             )
         })
 
@@ -90,12 +87,7 @@ export default function AnomalyManagement() {
                     return
                 }
 
-                const data = await getNearbyAnomalies(
-                    userLocation.lat,
-                    userLocation.lng,
-                    radiusKm,
-                    filters
-                )
+                const data = await getNearbyAnomalies(userLocation.lat, userLocation.lng, radiusKm, filters)
                 setAnomalies(data)
                 return
             }
@@ -121,7 +113,7 @@ export default function AnomalyManagement() {
     }
 
     async function handleDelete(id: string) {
-        if (!confirm('Are you sure you want to delete this anomaly?')) return
+        if (!confirm('Delete this anomaly? This cannot be undone.')) return
 
         try {
             await deleteAnomaly(id)
@@ -134,8 +126,8 @@ export default function AnomalyManagement() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-full">
-                <LoaderBars label="Loading anomalies..." />
+            <div className="flex items-center justify-center min-h-[60vh]">
+                <LoaderBars label="Loading anomalies" />
             </div>
         )
     }
@@ -149,182 +141,252 @@ export default function AnomalyManagement() {
     const improvedSpeedBumps = recentImproved.filter((item) => item.type === 'SPEED_BUMP').length
 
     return (
-        <div className="space-y-6 rs-fade-up">
+        <div className="space-y-5 rs-fade-up">
             {errorMessage && (
-                <div className="rs-panel p-4 border border-rose-500/40 text-rose-300">
-                    {errorMessage}
-                </div>
+                <div className="rs-banner rs-banner-warn">{errorMessage}</div>
             )}
-            <div className="rs-panel p-6">
-                <div className="flex items-center gap-4 flex-wrap">
-                    <Filter className="text-[var(--rs-muted)]" size={20} />
-                    <div className="flex gap-3 flex-wrap">
-                        <select value={filter} onChange={(e) => setFilter(e.target.value as any)} className="rs-select w-auto min-w-[140px]">
-                            <option value="all">All Types</option>
-                            <option value="POTHOLE">Potholes</option>
-                            <option value="SPEED_BUMP">Speed Bumps</option>
-                        </select>
 
-                        <select value={verifiedFilter} onChange={(e) => setVerifiedFilter(e.target.value as any)} className="rs-select w-auto min-w-[170px]">
-                            <option value="all">All Status</option>
-                            <option value="repaired">Repaired</option>
-                            <option value="not_repaired">Not Repaired</option>
-                        </select>
+            {/* Filter bar. Controls wrap on narrow screens rather than scrolling sideways. */}
+            <Card className="p-4">
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <Filter size={15} className="text-[var(--rs-text-faint)] shrink-0" />
+                    <select
+                        value={filter}
+                        onChange={(event) => setFilter(event.target.value as any)}
+                        className="rs-select w-auto min-w-[8.5rem] py-2 text-sm"
+                        aria-label="Filter by type"
+                    >
+                        <option value="all">All types</option>
+                        <option value="POTHOLE">Potholes</option>
+                        <option value="SPEED_BUMP">Speed bumps</option>
+                    </select>
 
-                        <select
-                            value={locationMode}
-                            onChange={(e) => setLocationMode(e.target.value as 'all' | 'nearby')}
-                            className="rs-select w-auto min-w-[180px]"
-                        >
-                            <option value="all">All Locations</option>
-                            <option value="nearby">Nearby Me</option>
-                        </select>
+                    <select
+                        value={verifiedFilter}
+                        onChange={(event) => setVerifiedFilter(event.target.value as any)}
+                        className="rs-select w-auto min-w-[9rem] py-2 text-sm"
+                        aria-label="Filter by status"
+                    >
+                        <option value="all">All status</option>
+                        <option value="repaired">Repaired</option>
+                        <option value="not_repaired">Not repaired</option>
+                    </select>
 
-                        {locationMode === 'nearby' && (
-                            <>
-                                <select
-                                    value={radiusKm}
-                                    onChange={(e) => setRadiusKm(Number(e.target.value))}
-                                    className="rs-select w-auto min-w-[140px]"
-                                >
-                                    <option value={1}>Within 1 km</option>
-                                    <option value={3}>Within 3 km</option>
-                                    <option value={5}>Within 5 km</option>
-                                    <option value={10}>Within 10 km</option>
-                                    <option value={20}>Within 20 km</option>
-                                </select>
+                    <select
+                        value={locationMode}
+                        onChange={(event) => setLocationMode(event.target.value as 'all' | 'nearby')}
+                        className="rs-select w-auto min-w-[9rem] py-2 text-sm"
+                        aria-label="Filter by location"
+                    >
+                        <option value="all">All locations</option>
+                        <option value="nearby">Nearby me</option>
+                    </select>
 
-                                <button
-                                    type="button"
-                                    onClick={() => void requestLocation()}
-                                    disabled={locating}
-                                    className="rs-button-secondary inline-flex items-center gap-2 px-4 py-2 disabled:opacity-60"
-                                >
-                                    <LocateFixed size={16} />
-                                    {locating ? 'Getting location...' : userLocation ? 'Refresh My Location' : 'Use My Location'}
-                                </button>
-                            </>
-                        )}
-                    </div>
-                    <div className="ml-auto text-[var(--rs-muted)]">{anomalies.length} anomalies</div>
+                    {locationMode === 'nearby' && (
+                        <>
+                            <select
+                                value={radiusKm}
+                                onChange={(event) => setRadiusKm(Number(event.target.value))}
+                                className="rs-select w-auto min-w-[8rem] py-2 text-sm"
+                                aria-label="Search radius"
+                            >
+                                <option value={1}>Within 1 km</option>
+                                <option value={3}>Within 3 km</option>
+                                <option value={5}>Within 5 km</option>
+                                <option value={10}>Within 10 km</option>
+                                <option value={20}>Within 20 km</option>
+                            </select>
+
+                            <Button
+                                variant="secondary"
+                                icon={LocateFixed}
+                                onClick={() => void requestLocation()}
+                                disabled={locating}
+                                className="py-2 text-sm"
+                            >
+                                {locating ? 'Locating…' : userLocation ? 'Refresh location' : 'Use my location'}
+                            </Button>
+                        </>
+                    )}
+
+                    <span className="ml-auto text-[14px] text-[var(--rs-text-muted)] shrink-0">
+                        {anomalies.length} results
+                    </span>
                 </div>
+
                 {locationMode === 'nearby' && !userLocation && (
-                    <p className="text-sm text-[var(--rs-muted)] mt-4">
-                        Select Use My Location to show nearby anomalies.
-                    </p>
+                    <p className="text-[13px] rs-muted mt-3">Choose Use my location to see nearby anomalies.</p>
                 )}
                 {locationMode === 'nearby' && userLocation && (
-                    <p className="text-sm text-[var(--rs-muted)] mt-4">
-                        Showing anomalies within {radiusKm} km of your location ({toNumber(userLocation.lat).toFixed(4)}, {toNumber(userLocation.lng).toFixed(4)}).
+                    <p className="text-[13px] rs-muted mt-3">
+                        Within {radiusKm} km of{' '}
+                        <span className="rs-mono text-[var(--rs-text)]">
+                            {toNumber(userLocation.lat).toFixed(4)}, {toNumber(userLocation.lng).toFixed(4)}
+                        </span>
                     </p>
                 )}
-                {locationError && (
-                    <p className="text-sm text-amber-300 mt-3">{locationError}</p>
-                )}
-            </div>
+                {locationError && <p className="text-[13px] text-[var(--rs-warn)] mt-3">{locationError}</p>}
+            </Card>
 
-            <div className="rs-panel p-6">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
+            <Card className="overflow-hidden">
+                <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--rs-line)]">
                     <div>
-                        <h3 className="text-lg font-semibold text-[var(--rs-text)] inline-flex items-center gap-2">
-                            <Clock3 size={18} />
+                        <h2 className="rs-heading inline-flex items-center gap-2">
+                            <Clock3 size={16} className="text-[var(--rs-success)]" />
                             Recently Improved Roads
-                        </h3>
-                        <p className="text-sm text-[var(--rs-muted)] mt-1">
+                        </h2>
+                        <p className="text-[13px] text-[var(--rs-text-faint)] mt-0.5">
                             Latest repaired potholes and speed bumps
                         </p>
                     </div>
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <Pill tone="danger">{improvedPotholes} potholes</Pill>
+                        <Pill tone="warn">{improvedSpeedBumps} bumps</Pill>
                         <select
                             value={reportDays}
-                            onChange={(e) => setReportDays(Number(e.target.value) as 7 | 30 | 90)}
-                            className="rs-select w-auto min-w-[170px]"
+                            onChange={(event) => setReportDays(Number(event.target.value) as 7 | 30 | 90)}
+                            className="rs-select w-auto min-w-[8.5rem] py-2 text-sm"
+                            aria-label="Report window"
                         >
                             <option value={7}>Last 7 days</option>
                             <option value={30}>Last 30 days</option>
                             <option value={90}>Last 90 days</option>
                         </select>
-                        <div className="text-sm text-[var(--rs-muted)]">
-                            Potholes improved: <span className="text-[var(--rs-text)] font-semibold">{improvedPotholes}</span> • Speed bumps improved: <span className="text-[var(--rs-text)] font-semibold">{improvedSpeedBumps}</span>
-                        </div>
                     </div>
                 </div>
 
                 {recentImproved.length === 0 ? (
-                    <div className="text-sm text-[var(--rs-muted)] mt-4">No improved anomalies were updated recently.</div>
+                    <EmptyState
+                        icon={Clock3}
+                        title="No recent improvements"
+                        description="Nothing was marked repaired in this window."
+                    />
                 ) : (
-                    <div className="mt-4 overflow-x-auto">
-                        <table className="w-full rs-table">
+                    <div className="overflow-x-auto">
+                        <table className="rs-table min-w-[42rem]">
                             <thead>
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Type</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Location</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Updated</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Confidence</th>
+                                    <th>Type</th>
+                                    <th>Location</th>
+                                    <th>Updated</th>
+                                    <th>Confidence</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-[var(--rs-border)]">
+                            <tbody>
                                 {recentImproved.map((item) => (
                                     <tr key={`improved-${item.id}`}>
-                                        <td className="px-4 py-3 text-sm text-[var(--rs-text)]">{item.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}</td>
-                                        <td className="px-4 py-3 text-sm text-[var(--rs-text)]">{toNumber(item.latitude).toFixed(4)}, {toNumber(item.longitude).toFixed(4)}</td>
-                                        <td className="px-4 py-3 text-sm text-[var(--rs-muted)]">{new Date(item.updated_at || item.created_at).toLocaleString()}</td>
-                                        <td className="px-4 py-3 text-sm text-[var(--rs-text)]">{(toNumber(item.confidence) * 100).toFixed(0)}%</td>
+                                        <td>
+                                            <Pill tone={item.type === 'POTHOLE' ? 'danger' : 'warn'}>
+                                                {item.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
+                                            </Pill>
+                                        </td>
+                                        <td className="rs-mono text-xs rs-muted whitespace-nowrap">
+                                            {toNumber(item.latitude).toFixed(4)}, {toNumber(item.longitude).toFixed(4)}
+                                        </td>
+                                        <td className="rs-muted whitespace-nowrap">
+                                            {new Date(item.updated_at || item.created_at).toLocaleString()}
+                                        </td>
+                                        <td className="rs-mono text-[var(--rs-text)]">
+                                            {(toNumber(item.confidence) * 100).toFixed(0)}%
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                 )}
-            </div>
+            </Card>
 
-            <div className="rs-panel overflow-hidden">
+            <Card className="overflow-hidden">
+                <div className="px-5 py-4 border-b border-[var(--rs-line)]">
+                    <h2 className="rs-heading">All Anomalies</h2>
+                </div>
+
                 <div className="overflow-x-auto">
-                    <table className="w-full rs-table">
+                    <table className="rs-table min-w-[56rem]">
                         <thead>
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Location</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Severity</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Confidence</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Date</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Actions</th>
+                                <th>Type</th>
+                                <th>Location</th>
+                                <th>Severity</th>
+                                <th>Confidence</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th className="text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-[var(--rs-border)]">
+                        <tbody>
                             {anomalies.map((anomaly) => (
                                 <tr key={anomaly.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${anomaly.type === 'POTHOLE' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                                    <td>
+                                        <Pill tone={anomaly.type === 'POTHOLE' ? 'danger' : 'warn'}>
                                             {anomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}
-                                        </span>
+                                        </Pill>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--rs-text)]">{toNumber(anomaly.latitude).toFixed(4)}, {toNumber(anomaly.longitude).toFixed(4)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--rs-text)]">{(toNumber(anomaly.severity) * 100).toFixed(0)}%</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--rs-text)]">{(toNumber(anomaly.confidence) * 100).toFixed(0)}%</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        {anomaly.verified ? <span className="text-emerald-400 text-sm">Verified</span> : <span className="text-[var(--rs-muted)] text-sm">Pending</span>}
+                                    <td className="rs-mono text-xs rs-muted whitespace-nowrap">
+                                        {toNumber(anomaly.latitude).toFixed(4)}, {toNumber(anomaly.longitude).toFixed(4)}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--rs-muted)]">{new Date(anomaly.created_at).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <div className="flex gap-2">
+                                    <td>
+                                        {(() => {
+                                            const band = severityBand(toNumber(anomaly.severity))
+                                            return <Pill tone={band.tone}>{band.label}</Pill>
+                                        })()}
+                                    </td>
+                                    <td className="rs-mono text-[var(--rs-text)]">
+                                        {(toNumber(anomaly.confidence) * 100).toFixed(0)}%
+                                    </td>
+                                    <td>
+                                        {anomaly.verified ? (
+                                            <Pill tone="success">Verified</Pill>
+                                        ) : (
+                                            <Pill tone="neutral">Pending</Pill>
+                                        )}
+                                    </td>
+                                    <td className="rs-muted rs-mono text-xs whitespace-nowrap">
+                                        {new Date(anomaly.created_at).toLocaleDateString()}
+                                    </td>
+                                    <td>
+                                        <div className="flex gap-2 justify-end">
                                             {!anomaly.verified && (
-                                                <button onClick={() => handleVerify(anomaly.id)} className="p-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors" title="Verify">
-                                                    <CheckCircle size={16} className="text-white" />
-                                                </button>
+                                                <IconButton
+                                                    icon={CheckCircle}
+                                                    label="Verify anomaly"
+                                                    onClick={() => handleVerify(anomaly.id)}
+                                                    className="h-8 w-8 hover:!text-[var(--rs-success)] hover:!border-[var(--rs-success-edge)]"
+                                                />
                                             )}
-                                            <button onClick={() => handleDelete(anomaly.id)} className="p-2 bg-rose-600 hover:bg-rose-500 rounded-lg transition-colors" title="Delete">
-                                                <Trash2 size={16} className="text-white" />
-                                            </button>
+                                            <IconButton
+                                                icon={Trash2}
+                                                label="Delete anomaly"
+                                                onClick={() => handleDelete(anomaly.id)}
+                                                className="h-8 w-8 hover:!text-[var(--rs-danger)] hover:!border-[var(--rs-danger-edge)]"
+                                            />
                                         </div>
                                     </td>
                                 </tr>
                             ))}
+                            {anomalies.length === 0 && (
+                                <tr>
+                                    <td colSpan={7}>
+                                        <EmptyState
+                                            icon={AlertTriangle}
+                                            title="No anomalies found"
+                                            description="Adjust the filters above to widen the search."
+                                        />
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </Card>
         </div>
     )
+}
+
+/** Severity as a readable band. Thresholds match the app's alert levels. */
+function severityBand(severity: number): { label: string; tone: 'danger' | 'warn' | 'neutral' } {
+    if (severity >= 0.7) return { label: 'High', tone: 'danger' }
+    if (severity >= 0.4) return { label: 'Medium', tone: 'warn' }
+    return { label: 'Low', tone: 'neutral' }
 }

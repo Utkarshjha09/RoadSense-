@@ -1,16 +1,27 @@
 import { useEffect, useState } from 'react'
 import { getAnomalyStats, getAllAnomalies, getRepairValidationStats } from '../lib/queries'
-import { AlertTriangle, CheckCircle, TrendingUp, MapPin } from 'lucide-react'
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { Activity, MapPin } from 'lucide-react'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { RepairValidationStat } from '../lib/supabase'
 import { Link } from 'react-router-dom'
 import LoaderBars from '../components/LoaderBars'
+import {
+    Card,
+    Pill,
+    StatCard,
+    Legend,
+    EmptyState,
+    TONE_VAR,
+    type Tone,
+} from '../components/ui'
+
+type RepairFilter = 'all' | 'repaired' | 'not_repaired' | 'waiting'
 
 export default function Dashboard() {
     const [stats, setStats] = useState<any>(null)
     const [recentAnomalies, setRecentAnomalies] = useState<any[]>([])
     const [repairStats, setRepairStats] = useState<RepairValidationStat[]>([])
-    const [repairFilter, setRepairFilter] = useState<'all' | 'repaired' | 'not_repaired' | 'waiting'>('all')
+    const [repairFilter, setRepairFilter] = useState<RepairFilter>('all')
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
@@ -36,8 +47,8 @@ export default function Dashboard() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-full">
-                <LoaderBars label="Loading dashboard..." />
+            <div className="flex items-center justify-center min-h-[60vh]">
+                <LoaderBars label="Loading dashboard" />
             </div>
         )
     }
@@ -45,6 +56,7 @@ export default function Dashboard() {
     const repairedCount = repairStats.filter((item) => item.status_label === 'REPAIRED').length
     const remainingCount = repairStats.filter((item) => item.status_label === 'REMAINING_ISSUES').length
     const waitingCount = repairStats.filter((item) => item.status_label === 'WAITING_DATA').length
+
     const filteredRepairStats = repairStats.filter((item) => {
         if (repairFilter === 'repaired') return item.status_label === 'REPAIRED'
         if (repairFilter === 'not_repaired') return item.status_label === 'REMAINING_ISSUES'
@@ -53,186 +65,238 @@ export default function Dashboard() {
     })
 
     const chartData = [
-        { name: 'Potholes', value: stats?.potholes || 0, color: '#ff6b5f' },
-        { name: 'Speed Bumps', value: stats?.speedBumps || 0, color: '#f9a826' },
+        { name: 'Potholes', value: stats?.potholes || 0, tone: 'danger' as Tone },
+        { name: 'Speed Bumps', value: stats?.speedBumps || 0, tone: 'warn' as Tone },
     ]
+    const chartTotal = chartData.reduce((sum, entry) => sum + entry.value, 0)
 
     return (
-        <div className="space-y-6 rs-fade-up">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatsCard icon={MapPin} label="Total Anomalies" value={stats?.total || 0} color="blue" />
-                <StatsCard icon={AlertTriangle} label="Potholes" value={stats?.potholes || 0} color="red" />
-                <StatsCard icon={TrendingUp} label="Speed Bumps" value={stats?.speedBumps || 0} color="yellow" />
-                <StatsCard icon={CheckCircle} label="Verified" value={`${stats?.verificationRate?.toFixed(1) || 0}%`} color="green" />
+        <div className="space-y-5 rs-fade-up">
+            {/* Detection counts. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                <StatCard label="Total Anomalies" value={stats?.total ?? 0} caption="All time detections" />
+                <StatCard label="Potholes" value={stats?.potholes ?? 0} caption="Active issues" />
+                <StatCard label="Speed Bumps" value={stats?.speedBumps ?? 0} caption="Detected" />
+                <StatCard
+                    label="Verified"
+                    value={`${stats?.verificationRate?.toFixed(0) ?? 0}%`}
+                    caption="Of total detections"
+                />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="rs-panel p-5">
-                    <p className="text-[var(--rs-muted)] text-xs uppercase tracking-[0.12em]">Repairs Completed</p>
-                    <p className="text-3xl font-bold text-emerald-300 mt-2">{repairedCount}</p>
-                </div>
-                <div className="rs-panel p-5">
-                    <p className="text-[var(--rs-muted)] text-xs uppercase tracking-[0.12em]">Repairs Remaining</p>
-                    <p className="text-3xl font-bold text-rose-300 mt-2">{remainingCount}</p>
-                </div>
-                <div className="rs-panel p-5">
-                    <p className="text-[var(--rs-muted)] text-xs uppercase tracking-[0.12em]">Under Observation</p>
-                    <p className="text-3xl font-bold text-amber-300 mt-2">{waitingCount}</p>
-                </div>
+            {/* Repair validation counts. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <StatCard label="Repairs Completed" value={repairedCount} caption="Confirmed by later passes" />
+                <StatCard label="Repairs Remaining" value={remainingCount} caption="Still reporting issues" />
+                <StatCard label="Under Observation" value={waitingCount} caption="Awaiting enough passes" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="rs-panel p-6">
-                    <h3 className="text-lg font-semibold text-[var(--rs-text)] mb-4">Anomaly Distribution</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie
-                                data={chartData}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                                outerRadius={84}
-                                fill="#8884d8"
-                                dataKey="value"
-                            >
-                                {chartData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="rs-panel p-6">
-                    <h3 className="text-lg font-semibold text-[var(--rs-text)] mb-4">Recent Detections</h3>
-                    <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                        {recentAnomalies.map((anomaly) => (
-                            <div key={anomaly.id} className="flex items-center justify-between p-3 rs-panel-soft">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${anomaly.type === 'POTHOLE' ? 'bg-[#ff6b5f]' : 'bg-[#f9a826]'}`} />
-                                    <div>
-                                        <p className="text-[var(--rs-text)] font-medium">{anomaly.type === 'POTHOLE' ? 'Pothole' : 'Speed Bump'}</p>
-                                        <p className="text-[var(--rs-muted)] text-sm">{new Date(anomaly.created_at).toLocaleString()}</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[var(--rs-text)] text-sm">{(anomaly.severity * 100).toFixed(0)}% severity</p>
-                                    {anomaly.verified && <span className="text-emerald-400 text-xs">Verified</span>}
-                                </div>
-                            </div>
-                        ))}
+            <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
+                <Card className="p-5">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                        <h2 className="rs-heading">Anomaly Distribution</h2>
+                        <Legend items={[{ label: 'Potholes', tone: 'danger' }, { label: 'Bumps', tone: 'warn' }]} />
                     </div>
-                </div>
+
+                    {chartTotal === 0 ? (
+                        <EmptyState
+                            icon={Activity}
+                            title="No detections yet"
+                            description="Data appears once drives are logged."
+                        />
+                    ) : (
+                        <>
+                            <ResponsiveContainer width="100%" height={240}>
+                                <PieChart>
+                                    <Pie
+                                        data={chartData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={62}
+                                        outerRadius={94}
+                                        paddingAngle={3}
+                                        dataKey="value"
+                                        stroke="none"
+                                    >
+                                        {chartData.map((entry) => (
+                                            <Cell key={entry.name} fill={TONE_VAR[entry.tone]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{
+                                            background: 'var(--rs-surface-2)',
+                                            border: '1px solid var(--rs-line)',
+                                            borderRadius: 8,
+                                            fontSize: 13,
+                                        }}
+                                        itemStyle={{ color: 'var(--rs-text)' }}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+
+                            <div className="flex items-center justify-center gap-10 mt-2">
+                                {chartData.map((entry) => (
+                                    <div key={entry.name} className="text-center">
+                                        <p className="rs-metric-sm" style={{ color: TONE_VAR[entry.tone] }}>
+                                            {chartTotal ? Math.round((entry.value / chartTotal) * 100) : 0}%
+                                        </p>
+                                        <p className="rs-micro mt-1">{entry.name}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </Card>
+
+                <Card className="p-5 flex flex-col">
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 className="rs-heading">Recent Detections</h2>
+                        <Link to="/anomalies" className="rs-link text-[13px]">
+                            View all
+                        </Link>
+                    </div>
+
+                    {recentAnomalies.length === 0 ? (
+                        <EmptyState
+                            icon={Activity}
+                            title="Nothing logged yet"
+                            description="Detections stream in from active drives."
+                        />
+                    ) : (
+                        <div className="-mx-5 mt-2 max-h-[20rem] overflow-y-auto">
+                            {recentAnomalies.map((anomaly, index) => {
+                                const isPothole = anomaly.type === 'POTHOLE'
+                                return (
+                                    <div
+                                        key={anomaly.id}
+                                        className={`flex items-center justify-between gap-3 px-5 py-3 ${
+                                            index > 0 ? 'border-t border-[var(--rs-line)]' : ''
+                                        }`}
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="text-[14px] font-medium text-[var(--rs-text)]">
+                                                {isPothole ? 'Pothole' : 'Speed Bump'}
+                                            </p>
+                                            <p className="text-[13px] text-[var(--rs-text-faint)]">
+                                                {new Date(anomaly.created_at).toLocaleDateString()}
+                                                {' - '}
+                                                {(anomaly.severity * 100).toFixed(0)}% severity
+                                            </p>
+                                        </div>
+                                        <Pill tone={anomaly.verified ? 'success' : 'warn'}>
+                                            {anomaly.verified ? 'Verified' : 'Pending'}
+                                        </Pill>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                </Card>
             </div>
 
-            <div className="rs-panel overflow-hidden">
-                <div className="px-6 pt-5 pb-3 flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-[var(--rs-text)]">Repair Validation </h3>
-                    <div className="flex items-center gap-3">
+            {/* Repair validation detail. */}
+            <Card className="overflow-hidden">
+                <div className="px-5 py-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--rs-line)]">
+                    <div>
+                        <h2 className="rs-heading">Repair Validation</h2>
+                        <p className="text-[13px] text-[var(--rs-text-faint)] mt-0.5">
+                            Locations tracked across repeated passes
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
                         <select
                             value={repairFilter}
-                            onChange={(e) => setRepairFilter(e.target.value as 'all' | 'repaired' | 'not_repaired' | 'waiting')}
-                            className="rs-select w-auto min-w-[170px] text-sm"
+                            onChange={(event) => setRepairFilter(event.target.value as RepairFilter)}
+                            className="rs-select w-auto min-w-[9rem] py-2 text-[14px]"
+                            aria-label="Filter by repair status"
                         >
-                            <option value="all">All Status</option>
+                            <option value="all">All status</option>
                             <option value="repaired">Repaired</option>
-                            <option value="not_repaired">Not Repaired</option>
-                            <option value="waiting">Waiting Data</option>
+                            <option value="not_repaired">Not repaired</option>
+                            <option value="waiting">Waiting data</option>
                         </select>
-                        <p className="text-sm text-[var(--rs-muted)]">{filteredRepairStats.length} locations</p>
+                        <Pill tone="neutral">{filteredRepairStats.length} results</Pill>
                     </div>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full rs-table">
+
+                <div className="overflow-x-auto max-h-[26rem]">
+                    <table className="rs-table min-w-[54rem]">
                         <thead>
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Location</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Address</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Potholes</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Speed Bumps</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Observed/Goal</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Repaired %</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--rs-muted)] uppercase tracking-wider">Status</th>
+                                <th>Location</th>
+                                <th>Address</th>
+                                <th>Potholes</th>
+                                <th>Bumps</th>
+                                <th>Observed</th>
+                                <th>Repaired</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-[var(--rs-border)]">
+                        <tbody>
                             {filteredRepairStats.map((item) => {
                                 const mapUrl = `/map?lat=${item.latitude}&lng=${item.longitude}&zoom=17`
+                                const status = STATUS_META[item.status_label] ?? STATUS_META.WAITING_DATA
+
                                 return (
                                     <tr key={item.repair_id}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            <Link className="text-cyan-300 hover:text-cyan-200 underline" to={mapUrl}>
-                                                {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}
+                                        <td className="whitespace-nowrap">
+                                            <Link className="rs-link rs-mono text-[12px]" to={mapUrl}>
+                                                {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
                                             </Link>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-[var(--rs-text)]">
+                                        <td className="max-w-[16rem]">
                                             {item.address_text ? (
-                                                <Link className="text-cyan-300 hover:text-cyan-200 underline" to={mapUrl}>
+                                                <Link className="rs-link" to={mapUrl}>
                                                     {item.address_text}
                                                 </Link>
                                             ) : (
-                                                <span className="text-[var(--rs-muted)]">Address not set</span>
+                                                <span className="rs-faint">Not set</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-rose-300">{item.pothole_events}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-300">{item.speed_bump_events}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--rs-text)]">{item.observed_events}/{item.sample_goal}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--rs-text)]">{item.repaired_percent.toFixed(1)}%</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                            {item.status_label === 'REPAIRED' && <span className="text-emerald-300">Repaired</span>}
-                                            {item.status_label === 'REMAINING_ISSUES' && <span className="text-rose-300">Remaining</span>}
-                                            {item.status_label === 'WAITING_DATA' && <span className="text-amber-300">Waiting Data</span>}
+                                        <td className="rs-mono text-[var(--rs-danger)]">{item.pothole_events}</td>
+                                        <td className="rs-mono text-[var(--rs-warn)]">{item.speed_bump_events}</td>
+                                        <td className="rs-mono rs-muted">
+                                            {item.observed_events}/{item.sample_goal}
+                                        </td>
+                                        <td>
+                                            <div className="flex items-center gap-2 min-w-[7rem]">
+                                                <div className="flex-1 h-1.5 rounded-full bg-[var(--rs-surface-3)] overflow-hidden">
+                                                    <div
+                                                        className="h-full rounded-full"
+                                                        style={{
+                                                            width: `${Math.min(100, Math.max(0, item.repaired_percent))}%`,
+                                                            background: 'var(--rs-success)',
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span className="rs-mono text-[12px] rs-faint w-9 text-right">
+                                                    {item.repaired_percent.toFixed(0)}%
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <Pill tone={status.tone}>{status.label}</Pill>
                                         </td>
                                     </tr>
                                 )
                             })}
                             {filteredRepairStats.length === 0 && (
                                 <tr>
-                                    <td className="px-6 py-6 text-sm text-[var(--rs-muted)]" colSpan={7}>
-                                        No locations found for selected filter.
+                                    <td colSpan={7}>
+                                        <EmptyState icon={MapPin} title="No locations match" description="Try a different status filter." />
                                     </td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </Card>
         </div>
     )
 }
 
-function StatsCard({
-    icon: Icon,
-    label,
-    value,
-    color,
-}: {
-    icon: any
-    label: string
-    value: string | number
-    color: string
-}) {
-    const colors = {
-        blue: 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/35',
-        red: 'bg-rose-500/15 text-rose-300 border border-rose-400/35',
-        yellow: 'bg-amber-500/15 text-amber-300 border border-amber-400/35',
-        green: 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/35',
-    }
-
-    return (
-        <div className="rs-panel p-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-[var(--rs-muted)] text-sm mb-1">{label}</p>
-                    <p className="text-3xl font-bold text-[var(--rs-text)]">{value}</p>
-                </div>
-                <div className={`p-3 rounded-xl ${colors[color as keyof typeof colors]}`}>
-                    <Icon size={24} />
-                </div>
-            </div>
-        </div>
-    )
+const STATUS_META: Record<string, { label: string; tone: Tone }> = {
+    REPAIRED: { label: 'Repaired', tone: 'success' },
+    REMAINING_ISSUES: { label: 'Remaining', tone: 'danger' },
+    WAITING_DATA: { label: 'Waiting', tone: 'warn' },
 }

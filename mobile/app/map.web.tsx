@@ -305,13 +305,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     primaryButtonText: {
-        color: '#032137',
+        color: theme.colors.primaryInk,
         fontWeight: '800',
         fontSize: 12,
     },
     secondaryButton: {
         flex: 1,
-        backgroundColor: '#2b4a66',
+        backgroundColor: theme.colors.surface3,
         borderRadius: 10,
         paddingVertical: 10,
         alignItems: 'center',
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
         fontSize: 12,
     },
     errorText: {
-        color: '#ffb5ae',
+        color: theme.colors.danger,
         fontSize: 12,
     },
     routeCard: {
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
         fontWeight: '800',
     },
     bestTag: {
-        color: '#032137',
+        color: theme.colors.primaryInk,
         backgroundColor: theme.colors.accent,
         borderRadius: 999,
         paddingHorizontal: 8,

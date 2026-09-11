@@ -28,6 +28,7 @@ import {
 } from '../src/services/device-connection.service'
 import { getAnomaliesInViewport, uploadAnomaly } from '../src/services/supabase.service'
 import { theme } from '../src/theme'
+import { DARK_MAP_STYLE } from '../src/map-style'
 import {
     calculateRouteStats,
     decodePolyline,
@@ -1118,6 +1119,7 @@ export default function DrivingScreen() {
                 <MapView
                     ref={mapRef}
                     style={styles.map}
+                    customMapStyle={DARK_MAP_STYLE}
                     initialRegion={{
                         latitude: location.latitude,
                         longitude: location.longitude,
@@ -1156,7 +1158,7 @@ export default function DrivingScreen() {
                             key={route.id}
                             coordinates={route.path}
                             strokeWidth={route.id === selectedRouteId ? (isNavigating ? 3 : 6) : 4}
-                            strokeColor={route.id === selectedRouteId ? theme.colors.accent : 'rgba(237,242,255,0.28)'}
+                            strokeColor={route.id === selectedRouteId ? theme.colors.primary : 'rgba(233,240,255,0.28)'}
                         />
                     ))}
 

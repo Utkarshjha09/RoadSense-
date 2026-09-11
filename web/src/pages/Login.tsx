@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Eye, EyeOff, MailCheck } from 'lucide-react'
+import { Eye, EyeOff, MailCheck, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../components/AuthProvider'
 import { useNavigate } from 'react-router-dom'
 import { sendOtp, verifyOtp } from '../lib/otp'
+import { Button } from '../components/ui'
 
 export default function Login() {
     const [email, setEmail] = useState('')
@@ -132,37 +133,36 @@ export default function Login() {
     const showOtpPanel = requiresLoginOtpVerification
 
     return (
-        <div className="min-h-screen rs-grid-bg flex items-center justify-center p-4 md:p-8">
-            <div className="rs-panel rs-fade-up p-8 md:p-10 w-full max-w-md">
-                <div className="text-center mb-8">
-                    <span className="rs-chip mb-4">Fleet Intelligence</span>
-                    <h1 className="text-4xl text-[var(--rs-text)] mb-2">RoadSense Admin</h1>
-                    <p className="text-[var(--rs-muted)]">
-                        {showOtpPanel
-                            ? 'Verify the OTP sent to your email to complete password login'
-                            : 'Sign in to access live anomaly operations and your profile'}
-                    </p>
+        /* auth.tsx `container`: centered, padding 24, no card wrapper. */
+        <div className="min-h-[100dvh] flex items-center justify-center p-6">
+            <div className="w-full max-w-[26rem] rs-fade-up">
+                {/* auth.tsx `brandRow`: icon tile + Road/Sense wordmark, centered. */}
+                <div className="flex items-center justify-center gap-2 mb-7">
+                    <span className="w-[30px] h-[30px] rounded-[10px] grid place-items-center bg-[var(--rs-primary-soft)] border border-[var(--rs-primary-edge)]">
+                        <img src="/roadsense-icon.svg" alt="" className="w-4 h-4" />
+                    </span>
+                    <span className="text-[17px] font-semibold text-[var(--rs-text)]">
+                        Road<span className="text-[var(--rs-primary)]">Sense</span>
+                    </span>
                 </div>
 
-                {error && (
-                    <div className="bg-[rgba(255,107,95,0.12)] border border-[rgba(255,107,95,0.5)] text-[#ffb2ab] px-4 py-3 rounded-xl mb-6">
-                        {error}
-                    </div>
-                )}
+                {/* auth.tsx `title` / `subtitle`: left aligned, 32px display. */}
+                <h1 className="rs-display">{showOtpPanel ? 'Verify' : 'Sign in'}</h1>
+                <p className="text-sm text-[var(--rs-text-muted)] mt-1.5 mb-7">
+                    {showOtpPanel
+                        ? 'Enter the code we emailed you to finish signing in.'
+                        : 'Welcome back. Your roads are waiting.'}
+                </p>
 
-                {otpMessage && (
-                    <div className="bg-[rgba(31,186,129,0.12)] border border-[rgba(31,186,129,0.4)] text-[#a7f0d1] px-4 py-3 rounded-xl mb-6">
-                        {otpMessage}
-                    </div>
-                )}
+                {error && <p className="text-[13px] text-[var(--rs-danger)] mb-3">{error}</p>}
+                {otpMessage && <p className="text-[13px] text-[var(--rs-success)] mb-3">{otpMessage}</p>}
 
                 {showOtpPanel ? (
-                    <form onSubmit={handleVerifyOtp} className="space-y-6">
+                    <form onSubmit={handleVerifyOtp} className="flex flex-col gap-3.5">
                         <div>
-                            <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
-                                Email
-                            </label>
+                            <label htmlFor="otp-email" className="rs-label">Email</label>
                             <input
+                                id="otp-email"
                                 type="email"
                                 value={loginEmail}
                                 readOnly
@@ -171,135 +171,125 @@ export default function Login() {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
-                                OTP
-                            </label>
+                            <label htmlFor="otp-code" className="rs-label">Verification code</label>
                             <input
+                                id="otp-code"
                                 type="text"
                                 value={otp}
                                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                className="rs-input"
-                                placeholder="Enter 6-digit OTP"
+                                /* auth.tsx `otpBox`: display font, wide tracking. */
+                                className="rs-input text-[22px] font-semibold text-center tracking-[0.4em]"
+                                placeholder="000000"
                                 inputMode="numeric"
+                                autoComplete="one-time-code"
                                 maxLength={6}
                                 required
                             />
                         </div>
 
-                        <button
-                            type="submit"
-                            disabled={otpLoading}
-                            className="w-full rs-button-primary disabled:opacity-60 disabled:cursor-not-allowed py-3 px-4 inline-flex items-center justify-center gap-2"
-                        >
-                            <MailCheck size={18} />
-                            {otpLoading ? 'Verifying OTP...' : 'Verify OTP'}
-                        </button>
+                        <Button type="submit" icon={MailCheck} disabled={otpLoading} className="w-full mt-1">
+                            {otpLoading ? 'Verifying...' : 'Verify Code'}
+                        </Button>
 
-                        <button
+                        <Button
                             type="button"
+                            variant="secondary"
                             onClick={() => void handleResendOtp()}
                             disabled={resendLoading}
-                            className="w-full rs-button-secondary py-3 px-4 disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="w-full"
                         >
-                            {resendLoading ? 'Sending...' : 'Resend OTP'}
-                        </button>
+                            {resendLoading ? 'Sending...' : 'Resend Code'}
+                        </Button>
 
                         <button
                             type="button"
                             onClick={() => void handleBackToLogin()}
-                            className="w-full text-sm text-[var(--rs-muted)] hover:text-[var(--rs-text)]"
+                            className="inline-flex items-center justify-center gap-1.5 text-[13px] font-semibold text-[var(--rs-primary)] hover:opacity-80"
                         >
+                            <ArrowLeft size={14} />
                             Back to login
                         </button>
                     </form>
                 ) : (
                     <>
-                        <div className="space-y-3 mb-6">
-                            <button
-                                type="button"
-                                onClick={() => void handleGoogleSignIn()}
-                                disabled={googleLoading}
-                                className="w-full rs-button-secondary py-3 px-4 disabled:opacity-60 disabled:cursor-not-allowed"
-                            >
-                                {googleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
-                            </button>
-                            <p className="text-center text-[var(--rs-muted)] text-xs">
-                                Configure Google in Supabase Auth and add your site URL to allowed redirect URLs.
-                            </p>
-                        </div>
-
-                        <div className="relative my-6">
-                            <div className="absolute inset-0 flex items-center">
-                                <div className="w-full border-t border-[var(--rs-border)]" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-[var(--rs-panel)] px-3 text-[var(--rs-muted)]">or use email</span>
-                            </div>
-                        </div>
-
-                        <form onSubmit={handleSubmit} className="space-y-6">
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
-                                    Email
-                                </label>
+                                <label htmlFor="login-email" className="rs-label">Email</label>
                                 <input
+                                    id="login-email"
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="rs-input"
-                                    placeholder="admin@roadsense.com"
+                                    placeholder="you@example.com"
+                                    autoComplete="email"
                                     required
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--rs-muted)] mb-2">
-                                    Password
-                                </label>
-                                <div className="relative">
+                                <label htmlFor="login-password" className="rs-label">Password</label>
+                                <div className="relative flex items-center">
                                     <input
+                                        id="login-password"
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="rs-input pr-12"
+                                        className="rs-input pr-11"
                                         placeholder="********"
+                                        autoComplete="current-password"
                                         required
                                     />
+                                    {/* auth.tsx `eyeButton`: absolute, right 14. */}
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword((value) => !value)}
-                                        className="absolute inset-y-0 right-0 px-4 text-[var(--rs-muted)] hover:text-[var(--rs-text)]"
+                                        className="absolute right-[14px] p-1 text-[var(--rs-text-faint)] hover:text-[var(--rs-text)] transition-colors"
                                         aria-label={showPassword ? 'Hide password' : 'Show password'}
                                     >
                                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                     </button>
                                 </div>
-                                <div className="mt-2 flex justify-end">
+                                <div className="flex justify-end mt-1">
                                     <button
                                         type="button"
                                         onClick={() => void handleForgotPassword()}
                                         disabled={resetLoading}
-                                        className="text-sm text-[#7fd7ff] hover:text-white disabled:opacity-60"
+                                        className="text-[13px] font-semibold text-[var(--rs-primary)] hover:opacity-80 disabled:opacity-60"
                                     >
                                         {resetLoading ? 'Sending reset link...' : 'Forgot password?'}
                                     </button>
                                 </div>
                             </div>
 
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full rs-button-primary disabled:opacity-60 disabled:cursor-not-allowed py-3 px-4"
-                            >
+                            <Button type="submit" disabled={loading} className="w-full mt-1">
                                 {loading ? 'Signing in...' : 'Sign In'}
-                            </button>
+                            </Button>
                         </form>
+
+                        {/* auth.tsx `divider`: hairline, 11px faint label, hairline. */}
+                        <div className="flex items-center mt-4 mb-3.5">
+                            <span className="flex-1 h-px bg-[var(--rs-line)]" />
+                            <span className="px-2.5 text-[11px] text-[var(--rs-text-faint)]">or</span>
+                            <span className="flex-1 h-px bg-[var(--rs-line)]" />
+                        </div>
+
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void handleGoogleSignIn()}
+                            disabled={googleLoading}
+                            className="w-full"
+                        >
+                            {googleLoading ? 'Redirecting...' : 'Continue with Google'}
+                        </Button>
+
+                        {/* auth.tsx `switchText`. */}
+                        <p className="text-center text-[13px] text-[var(--rs-text-muted)] mt-5">
+                            Admin access required for dashboard modules
+                        </p>
                     </>
                 )}
-
-                <p className="text-center text-[var(--rs-muted)] text-sm mt-6">
-                    Admin access required for dashboard modules
-                </p>
             </div>
         </div>
     )

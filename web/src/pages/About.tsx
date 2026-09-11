@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Mail, Phone, MapPin, Send, MessageCircle, Twitter, Github, Linkedin } from 'lucide-react'
 import { sendContactMessage } from '../lib/contact'
+import { Card, Button } from '../components/ui'
 
 declare global {
     interface Window {
@@ -104,136 +105,125 @@ export default function About() {
         }
     }
 
+
     return (
-        <section className="min-h-[calc(100vh-220px)] flex items-center">
-            <div className="w-full rs-panel p-0 overflow-hidden">
-                <div className="grid lg:grid-cols-5">
-                    <div className="lg:col-span-2 p-8 md:p-10 bg-[linear-gradient(140deg,#1c4f7f,#2c6ca2)] text-white relative">
-                        <div className="absolute top-0 right-0 w-60 h-60 rounded-full bg-white/10 blur-3xl -translate-y-1/2 translate-x-1/2" />
-                        <div className="absolute bottom-0 left-0 w-56 h-56 rounded-full bg-black/20 blur-3xl translate-y-1/2 -translate-x-1/2" />
-                        <div className="relative z-10">
-                            <h2 className="text-3xl md:text-4xl font-black leading-tight">Get in touch.</h2>
-                            <p className="mt-4 text-white/80">
-                                Tell us what you need and our team will respond quickly with next steps.
-                            </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start rs-fade-up max-w-[68rem]">
+            {/* Left: who we are and how to reach us. */}
+            <section>
+                <h1 className="rs-display">Get in touch</h1>
+                <p className="text-[15px] text-[var(--rs-text-muted)] leading-relaxed mt-3 max-w-md">
+                    Tell us what you need and our team will respond quickly with next steps.
+                </p>
 
-                            <div className="mt-6 rounded-2xl border border-white/20 bg-white/10 px-4 py-4">
-                                <h3 className="text-2xl font-bold text-white">About RoadSense</h3>
-                                <p className="mt-2 text-white/85 leading-relaxed">
-                                    RoadSense combines mobile sensing, cloud intelligence, and map analytics to prioritize road issues faster.
-                                </p>
-                                <p className="mt-3 text-sm uppercase tracking-[0.14em] font-semibold text-[var(--rs-accent)]">
-                                    Drive safe, stay safe.
-                                </p>
-                            </div>
+                <Card className="p-5 mt-7">
+                    <h2 className="rs-heading">About RoadSense</h2>
+                    <p className="text-[14px] text-[var(--rs-text-muted)] leading-relaxed mt-2">
+                        RoadSense combines mobile sensing, cloud intelligence, and map analytics to prioritize road
+                        issues faster.
+                    </p>
+                    <p className="rs-kicker text-[var(--rs-primary-text)] mt-4">Drive safe, stay safe.</p>
+                </Card>
 
-                            <div className="mt-10 space-y-5">
-                                <Info icon={<Mail size={16} />} label="Email us" value="work.utkarshjha@gmail.com" href="mailto:work.utkarshjha@gmail.com" />
-                                <Info icon={<Phone size={16} />} label="Call us" value="7061771437" />
-                                <Info icon={<MapPin size={16} />} label="Visit us" value="123 Design St, SF, CA" />
-                            </div>
+                <dl className="mt-7 space-y-4">
+                    <Info icon={<Mail size={15} />} label="Email" value="work.utkarshjha@gmail.com" href="mailto:work.utkarshjha@gmail.com" />
+                    <Info icon={<Phone size={15} />} label="Phone" value="+91 7061771437" href="tel:+917061771437" />
+                    <Info icon={<MapPin size={15} />} label="Address" value="123 Design St, San Francisco, CA" />
+                </dl>
 
-                            <div className="mt-10 flex gap-3">
-                                {[Twitter, Github, Linkedin].map((Icon, index) => (
-                                    <button
-                                        key={index}
-                                        type="button"
-                                        className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 transition-colors flex items-center justify-center"
-                                    >
-                                        <Icon size={14} />
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="lg:col-span-3 p-8 md:p-10 bg-[var(--rs-panel-soft)]">
-                        <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
-                            <div className="grid md:grid-cols-2 gap-5">
-                                <Field label="Full Name">
-                                    <input value={name} onChange={(e) => setName(e.target.value)} className="rs-input w-full" placeholder="John Doe" />
-                                </Field>
-                                <Field label="Email Address">
-                                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="rs-input w-full" placeholder="john@example.com" />
-                                </Field>
-                            </div>
-
-                            <Field label="Subject">
-                                <input value={subject} onChange={(e) => setsubject(e.target.value)} className="rs-input w-full" placeholder="ACME Corp" />
-                            </Field>
-
-                            <Field label="Your Message">
-                                <textarea
-                                    value={message}
-                                    onChange={(e) => setMessage(e.target.value)}
-                                    className="rs-input w-full min-h-32 resize-none"
-                                    placeholder="Tell us about your project..."
-                                />
-                            </Field>
-
-                            <div>
-                                {recaptchaSiteKey ? (
-                                    <div ref={captchaContainerRef} className="min-h-[78px]" />
-                                ) : (
-                                    <div className="rounded-xl border border-[#7b3d3d] bg-[#3b2222] text-[#ffb7b7] px-4 py-3 text-sm">
-                                        Missing <code>VITE_RECAPTCHA_SITE_KEY</code> in web env.
-                                    </div>
-                                )}
-                            </div>
-
-                            {status && (
-                                <div className={`rounded-xl border px-4 py-3 text-sm ${status.type === 'success'
-                                    ? 'border-[#2d7a56] bg-[#1b3a2d] text-[#b7f1d5]'
-                                    : 'border-[#7b3d3d] bg-[#3b2222] text-[#ffb7b7]'
-                                    }`}>
-                                    {status.text}
-                                </div>
-                            )}
-
-                            <button
-                                type="submit"
-                                disabled={submitting || !captchaToken}
-                                className="w-full h-12 rounded-xl bg-[var(--rs-accent)] text-[#022033] font-bold flex items-center justify-center gap-2 hover:brightness-105 transition disabled:opacity-70"
-                            >
-                                <Send size={16} />
-                                {submitting ? 'Sending...' : 'Send Message'}
-                            </button>
-
-                            <div className="pt-2 flex items-center gap-3 text-xs uppercase tracking-[0.12em] text-[var(--rs-muted)]">
-                                <MessageCircle size={14} className="text-[var(--rs-accent)]" />
-                                <span>Prefer a quick chat? Schedule a call.</span>
-                            </div>
-                        </form>
-                    </div>
+                <div className="mt-7 flex gap-2">
+                    {SOCIALS.map(({ icon: Icon, label }) => (
+                        <button key={label} type="button" className="rs-icon-button" aria-label={label}>
+                            <Icon size={16} />
+                        </button>
+                    ))}
                 </div>
-            </div>
-        </section>
+            </section>
+
+            {/* Right: the form. */}
+            <Card className="p-5 sm:p-6">
+                <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
+                    <div className="grid sm:grid-cols-2 gap-4">
+                        <Field label="Full Name">
+                            <input value={name} onChange={(e) => setName(e.target.value)} className="rs-input" placeholder="John Doe" />
+                        </Field>
+                        <Field label="Email Address">
+                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="rs-input" placeholder="john@example.com" />
+                        </Field>
+                    </div>
+
+                    <Field label="Subject">
+                        <input value={subject} onChange={(e) => setsubject(e.target.value)} className="rs-input" placeholder="How can we help?" />
+                    </Field>
+
+                    <Field label="Message">
+                        <textarea
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            className="rs-input min-h-[9.5rem] resize-none"
+                            placeholder="Tell us about your project..."
+                        />
+                    </Field>
+
+                    {recaptchaSiteKey ? (
+                        <div ref={captchaContainerRef} className="min-h-[78px]" />
+                    ) : (
+                        <div className="rs-banner rs-banner-warn">
+                            Missing <code className="rs-mono">VITE_RECAPTCHA_SITE_KEY</code> in web env.
+                        </div>
+                    )}
+
+                    {status && (
+                        <div className={`rs-banner ${status.type === 'success' ? 'rs-banner-success' : 'rs-banner-danger'}`}>
+                            {status.text}
+                        </div>
+                    )}
+
+                    <Button type="submit" icon={Send} disabled={submitting || !captchaToken} className="w-full">
+                        {submitting ? 'Sending...' : 'Send Message'}
+                    </Button>
+
+                    <p className="text-[13px] text-[var(--rs-text-faint)] flex items-center gap-2 pt-1">
+                        <MessageCircle size={14} />
+                        Prefer a quick chat? Schedule a call.
+                    </p>
+                </form>
+            </Card>
+        </div>
     )
 }
+
+const SOCIALS = [
+    { icon: Twitter, label: 'Twitter' },
+    { icon: Github, label: 'GitHub' },
+    { icon: Linkedin, label: 'LinkedIn' },
+] as const
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <label className="block">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--rs-muted)] mb-2">{label}</p>
+            <span className="rs-label">{label}</span>
             {children}
         </label>
     )
 }
 
+/** One contact line: faint label in a fixed column, value beside it. */
 function Info({ icon, label, value, href }: { icon: React.ReactNode; label: string; value: string; href?: string }) {
     return (
-        <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-white/15 flex items-center justify-center">{icon}</div>
-            <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">{label}</p>
+        <div className="flex items-baseline gap-4">
+            <dt className="flex items-center gap-2 w-[5.5rem] shrink-0 text-[13px] text-[var(--rs-text-faint)]">
+                <span className="translate-y-[2px]">{icon}</span>
+                {label}
+            </dt>
+            <dd className="m-0 text-[14px] font-medium text-[var(--rs-text)] break-all">
                 {href ? (
-                    <a href={href} className="text-sm font-semibold no-underline hover:no-underline focus:no-underline">
+                    <a href={href} className="text-[var(--rs-text)] no-underline hover:text-[var(--rs-primary-text)]">
                         {value}
                     </a>
                 ) : (
-                    <p className="text-sm font-semibold">{value}</p>
+                    value
                 )}
-            </div>
+            </dd>
         </div>
     )
 }

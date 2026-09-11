@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Wrench, AlertTriangle, TrafficCone, Clock4 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import LoaderBars from '../components/LoaderBars'
 import { getRepairedSummary } from '../lib/queries'
+import { Card, Pill, StatCard, EmptyState } from '../components/ui'
 
 type WindowDays = 7 | 30 | 90
 
@@ -34,7 +35,8 @@ export default function Reports() {
             setSummary(data)
         } catch (error) {
             console.error('Error loading repaired report summary:', error)
-            setErrorMessage('Could not load repaired report right now.')
+            setErrorMessage('Could not load repair report. Database connection required.')
+            setSummary(null)
         } finally {
             setLoading(false)
         }
@@ -42,124 +44,107 @@ export default function Reports() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-full">
-                <LoaderBars label="Loading repaired report..." />
+            <div className="flex items-center justify-center min-h-[60vh]">
+                <LoaderBars label="Loading report" />
             </div>
         )
     }
 
-    if (!summary) {
-        return (
-            <div className="rs-panel p-6 text-[var(--rs-muted)]">
-                {errorMessage || 'No repaired report data available yet.'}
-            </div>
-        )
-    }
+    const repairedPercent = summary ? Math.max(0, Math.min(100, summary.repairedPercent)) : 0
 
     return (
-        <div className="space-y-6 rs-fade-up">
-            <div className="rs-panel p-6">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="space-y-5 rs-fade-up">
+            {errorMessage && <div className="rs-banner rs-banner-warn">{errorMessage}</div>}
+
+            {/* Headline figures. A failed load shows dashes, never zeros. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <StatCard
+                    label="Total Repaired"
+                    value={summary ? summary.repairedTotal : null}
+                    caption={`Last ${windowDays} days`}
+                />
+                <StatCard
+                    label="Still Pending"
+                    value={summary ? summary.pendingTotal : null}
+                    caption="Awaiting repair"
+                />
+                <StatCard
+                    label="Repair Rate"
+                    value={summary ? `${repairedPercent.toFixed(1)}%` : null}
+                    caption="Share of detections closed"
+                />
+            </div>
+
+            <Card className="p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                     <div>
-                        <p className="text-[var(--rs-muted)] text-xs uppercase tracking-[0.12em]">RoadSense Report</p>
-                        <h2 className="text-3xl font-black text-[var(--rs-text)] mt-1">Repaired Road Overview</h2>
-                        <p className="text-[var(--rs-muted)] mt-2">
-                            See how many potholes and speed bumps were marked repaired in the selected time window.
+                        <h2 className="rs-heading">Repair Breakdown</h2>
+                        <p className="text-[13px] text-[var(--rs-text-faint)] mt-0.5">
+                            Potholes and speed bumps marked repaired in this window
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-sm text-[var(--rs-muted)]">Window</span>
-                        <select
-                            className="rs-select w-auto min-w-[120px]"
-                            value={windowDays}
-                            onChange={(event) => setWindowDays(Number(event.target.value) as WindowDays)}
-                        >
-                            {WINDOW_OPTIONS.map((days) => (
-                                <option key={days} value={days}>
-                                    Last {days} days
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                    <select
+                        className="rs-select w-auto min-w-[9.5rem] py-2 text-[14px]"
+                        value={windowDays}
+                        onChange={(event) => setWindowDays(Number(event.target.value) as WindowDays)}
+                        aria-label="Report window"
+                    >
+                        {WINDOW_OPTIONS.map((days) => (
+                            <option key={days} value={days}>
+                                Last {days} days
+                            </option>
+                        ))}
+                    </select>
                 </div>
-            </div>
 
-            {errorMessage && (
-                <div className="rounded-xl border border-[#7b3d3d] bg-[#3b2222] text-[#ffb7b7] px-4 py-3 text-sm">
-                    {errorMessage}
-                </div>
-            )}
+                {!summary ? (
+                    <EmptyState
+                        icon={AlertTriangle}
+                        title="No report data"
+                        description="Connect the database to see live repair trends."
+                    />
+                ) : (
+                    <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                            <div className="rs-panel-soft bg-[var(--rs-surface-2)] px-4 py-3.5">
+                                <p className="rs-stat-label">Potholes repaired</p>
+                                <p className="rs-metric-sm text-[var(--rs-danger)] mt-1.5">
+                                    {summary.repairedPotholes}
+                                </p>
+                            </div>
+                            <div className="rs-panel-soft bg-[var(--rs-surface-2)] px-4 py-3.5">
+                                <p className="rs-stat-label">Speed bumps repaired</p>
+                                <p className="rs-metric-sm text-[var(--rs-warn)] mt-1.5">
+                                    {summary.repairedSpeedBumps}
+                                </p>
+                            </div>
+                        </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                <MetricCard
-                    icon={Wrench}
-                    colorClass="bg-emerald-500/15 text-emerald-300 border border-emerald-400/35"
-                    label="Total Repaired"
-                    value={summary.repairedTotal}
-                />
-                <MetricCard
-                    icon={AlertTriangle}
-                    colorClass="bg-rose-500/15 text-rose-300 border border-rose-400/35"
-                    label="Repaired Potholes"
-                    value={summary.repairedPotholes}
-                />
-                <MetricCard
-                    icon={TrafficCone}
-                    colorClass="bg-amber-500/15 text-amber-300 border border-amber-400/35"
-                    label="Repaired Speed Bumps"
-                    value={summary.repairedSpeedBumps}
-                />
-                <MetricCard
-                    icon={Clock4}
-                    colorClass="bg-cyan-500/15 text-cyan-300 border border-cyan-400/35"
-                    label="Pending Repair"
-                    value={summary.pendingTotal}
-                />
-            </div>
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                            <p className="text-[14px] text-[var(--rs-text-muted)]">
+                                {summary.repairedTotal} of {summary.total} anomalies closed
+                            </p>
+                            <Pill tone={repairedPercent >= 50 ? 'success' : 'warn'}>
+                                {repairedPercent.toFixed(1)}%
+                            </Pill>
+                        </div>
 
-            <div className="rs-panel p-6">
-                <h3 className="text-xl font-bold text-[var(--rs-text)]">Repair Rate</h3>
-                <p className="text-[var(--rs-muted)] mt-1">
-                    {summary.repairedTotal} out of {summary.total} anomalies were marked repaired in this window.
-                </p>
-                <div className="mt-5">
-                    <div className="h-4 rounded-full bg-[rgba(53,84,124,0.28)] overflow-hidden border border-[var(--rs-border)]">
-                        <div
-                            className="h-full bg-[linear-gradient(90deg,#19d48f,#4cc9f0)]"
-                            style={{ width: `${Math.max(0, Math.min(100, summary.repairedPercent))}%` }}
-                        />
-                    </div>
-                    <p className="mt-3 text-sm text-[var(--rs-text)] font-semibold">
-                        Repaired: {summary.repairedPercent.toFixed(1)}%
-                    </p>
-                </div>
-            </div>
-        </div>
-    )
-}
-
-function MetricCard({
-    icon: Icon,
-    label,
-    value,
-    colorClass,
-}: {
-    icon: any
-    label: string
-    value: number
-    colorClass: string
-}) {
-    return (
-        <div className="rs-panel p-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-[var(--rs-muted)] text-sm">{label}</p>
-                    <p className="text-3xl font-bold text-[var(--rs-text)] mt-1">{value}</p>
-                </div>
-                <div className={`p-3 rounded-xl ${colorClass}`}>
-                    <Icon size={22} />
-                </div>
-            </div>
+                        <div className="h-2 rounded-full bg-[var(--rs-surface-3)] overflow-hidden">
+                            <div
+                                className="h-full rounded-full transition-[width] duration-500 ease-out"
+                                style={{
+                                    width: `${repairedPercent}%`,
+                                    background: 'var(--rs-success)',
+                                }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                            <span className="rs-micro">0%</span>
+                            <span className="rs-micro">100%</span>
+                        </div>
+                    </>
+                )}
+            </Card>
         </div>
     )
 }
